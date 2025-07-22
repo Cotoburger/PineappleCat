@@ -15,7 +15,7 @@ channel_username = os.getenv("TELEGRAM_CHANNEL_USERNAME")
 
 # Discord
 DISCORD_CHANNEL_ID = 1341736506804539393
-MAG_THRESHOLD = 4.0
+MAG_THRESHOLD = 5.0
 
 # Файл для хранения ID последнего обработанного сообщения
 LAST_ID_FILE = "last_telegram_id.json"
