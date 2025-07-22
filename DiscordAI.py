@@ -17,6 +17,7 @@ from colorama import Fore, Style, init
 from earthquake_monitor import check_earthquakes  # добавим импорт
 from dotenv import load_dotenv
 import os
+from discord.ext import tasks
 
 load_dotenv()  # Загружает .env в переменные окружения
 
@@ -258,125 +259,113 @@ async def get_last_5_messages(channel):
     messages.reverse()
     return messages
 
-async def start_hourly_task():
-    while True:
-        try:
-            await send_hourly_message()
-        except Exception as e:
-            print(f"🧨 send_hourly_message упала: {e}, перезапускаю через 10 сек...")
-            await asyncio.sleep(10)
+@tasks.loop(seconds=25)
+async def hourly_task():
+    if not bot.is_ready():
+        return
 
-async def send_hourly_message():
-    await bot.wait_until_ready()
     channel = bot.get_channel(MEDIA)
-
     if channel is None:
         print("❌ Не удалось найти канал с данным ID")
         return
 
-    last_quake_check = 0
-    quake_check_interval = 60  # секунд
+    # === Таймер для землетрясений ===
+    now = time.time()
+    if not hasattr(hourly_task, "last_quake_check"):
+        hourly_task.last_quake_check = 0
 
-    while not bot.is_closed():
+    if now - hourly_task.last_quake_check >= 60:
         try:
-            # ⏱ Проверка землетрясений
-            now = time.time()
-            if now - last_quake_check >= quake_check_interval:
-                try:
-                    await check_earthquakes(bot)
-                except Exception as e:
-                    print(f"⚠️ Ошибка в check_earthquakes: {e}")
-                last_quake_check = now
-
-            # Получение сообщений
-            try:
-                last_messages = await get_last_5_messages(channel)
-            except Exception as e:
-                print(f"⚠️ Ошибка при получении сообщений: {e}")
-                last_messages = []
-
-            if not last_messages:
-                prompt = "Это мой личный канал, я ещё не отправлял сообщений."
-            else:
-                prompt = "Вот несколько последних сообщений из чата канала:\n"
-                for msg in last_messages:
-                    prompt += f"{msg.author.display_name}: {msg.content}\n"
-
-            last_message_time = last_messages[-1].created_at if last_messages else None
-            if not last_message_time or (datetime.now(timezone.utc) - last_message_time).total_seconds() > MEDIATIME:
-                try:
-                    response_message = await channel.send("-# Thinking...")
-                except Exception as e:
-                    print(f"⚠️ Ошибка при отправке сообщения: {e}")
-                    await asyncio.sleep(10)
-                    continue
-
-                accumulated_text = ""
-                token_buffer = ""
-                token_limit = 60
-                total_tokens = 0
-
-                edit_cooldown = 1.5
-                last_edit_time = 0
-
-                try:
-                    async for chunk in generate_hourly_report(prompt):
-                        token_buffer += chunk
-                        total_tokens += len(chunk.split())
-
-                        now = time.time()
-                        if total_tokens >= token_limit and (now - last_edit_time) >= edit_cooldown:
-                            accumulated_text += token_buffer
-                            lines = accumulated_text.split("\n")
-                            formatted_text = "\n".join(
-                                f"-# {line}" if line.strip() else line
-                                for line in lines
-                            )
-
-                            try:
-                                await response_message.edit(content=formatted_text + " **|** ")
-                            except Exception as e:
-                                print(f"⚠️ Ошибка при редактировании: {e}")
-                                await asyncio.sleep(5)
-                            last_edit_time = now
-                            token_buffer = ""
-                            total_tokens = 0
-                except Exception as e:
-                    print(f"⚠️ Ошибка в генерации отчёта: {e}")
-                    continue
-
-                # Финальная сборка
-                accumulated_text += token_buffer
-                lines = accumulated_text.split("\n")
-                formatted_text = "\n".join(
-                    f"-# {line}" if line.strip() else line
-                    for line in lines
-                )
-                final_text = "\n".join(
-                    line.lstrip("-# ").strip() if line.strip().startswith("-#") else line
-                    for line in formatted_text.split("\n")
-                )
-
-                try:
-                    await response_message.edit(content=final_text)
-                except Exception as e:
-                    print(f"⚠️ Финальная ошибка при редактировании: {e}")
-
-                try:
-                    history = load_history()
-                    history.append({
-                        "author": "bot",
-                        "content": final_text
-                    })
-                    save_history(history)
-                except Exception as e:
-                    print(f"⚠️ Ошибка при сохранении истории: {e}")
-
-            await asyncio.sleep(25)
-
+            await check_earthquakes(bot)
         except Exception as e:
-            print(f"🧯 Критическая ошибка в send_hourly_message: {e}")
-            await asyncio.sleep(10)
+            print(f"⚠️ Ошибка в check_earthquakes: {e}")
+        hourly_task.last_quake_check = now
+
+    # === Получение последних сообщений ===
+    try:
+        last_messages = await get_last_5_messages(channel)
+    except Exception as e:
+        print(f"⚠️ Ошибка при получении сообщений: {e}")
+        last_messages = []
+
+    if not last_messages:
+        prompt = "Это мой личный канал, я ещё не отправлял сообщений."
+    else:
+        prompt = "Вот несколько последних сообщений из чата канала:\n"
+        for msg in last_messages:
+            prompt += f"{msg.author.display_name}: {msg.content}\n"
+
+    # === Проверка времени последнего сообщения ===
+    last_message_time = last_messages[-1].created_at if last_messages else None
+    if not last_message_time or (datetime.now(timezone.utc) - last_message_time).total_seconds() > MEDIATIME:
+        try:
+            response_message = await channel.send("-# Thinking...")
+        except Exception as e:
+            print(f"⚠️ Ошибка при отправке сообщения: {e}")
+            return
+
+        accumulated_text = ""
+        token_buffer = ""
+        token_limit = 60
+        total_tokens = 0
+
+        edit_cooldown = 1.5
+        last_edit_time = 0
+
+        # === Постепенная генерация поста ===
+        try:
+            async for chunk in generate_hourly_report(prompt):
+                token_buffer += chunk
+                total_tokens += len(chunk.split())
+
+                now = time.time()
+                if total_tokens >= token_limit and (now - last_edit_time) >= edit_cooldown:
+                    accumulated_text += token_buffer
+                    lines = accumulated_text.split("\n")
+                    formatted_text = "\n".join(
+                        f"-# {line}" if line.strip() else line
+                        for line in lines
+                    )
+
+                    try:
+                        await response_message.edit(content=formatted_text + " **|** ")
+                    except Exception as e:
+                        print(f"⚠️ Ошибка при редактировании: {e}")
+                        await asyncio.sleep(5)
+
+                    last_edit_time = now
+                    token_buffer = ""
+                    total_tokens = 0
+        except Exception as e:
+            print(f"⚠️ Ошибка в генерации отчёта: {e}")
+            return
+
+        # === Финальная сборка ===
+        accumulated_text += token_buffer
+        lines = accumulated_text.split("\n")
+        formatted_text = "\n".join(
+            f"-# {line}" if line.strip() else line
+            for line in lines
+        )
+        final_text = "\n".join(
+            line.lstrip("-# ").strip() if line.strip().startswith("-#") else line
+            for line in formatted_text.split("\n")
+        )
+
+        try:
+            await response_message.edit(content=final_text)
+        except Exception as e:
+            print(f"⚠️ Финальная ошибка при редактировании: {e}")
+
+        try:
+            history = load_history()
+            history.append({
+                "author": "bot",
+                "content": final_text
+            })
+            save_history(history)
+        except Exception as e:
+            print(f"⚠️ Ошибка при сохранении истории: {e}")
 
 
 async def fetch_url_content(url):
@@ -526,8 +515,10 @@ weather_keywords = [
 @bot.event
 async def on_ready():
     print(f"{Style.DIM}Бот {bot.user.name} подключился к Discord!{Style.RESET_ALL}")
-    await bot.tree.sync()  # Синхронизация команд при запуске
-    bot.loop.create_task(start_hourly_task())
+    await bot.tree.sync()
+
+    if not hourly_task.is_running():
+        hourly_task.start()
 
 @bot.event
 async def on_message(message):
