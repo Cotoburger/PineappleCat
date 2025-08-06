@@ -53,7 +53,7 @@ LM_STUDIO_URL = "http://127.0.0.1:17834/v1/chat/completions"
 
 
 # Текущая модель по умолчанию
-current_model = "gemma-3-12b-it-qat"
+current_model = "openai/gpt-oss-20b"
 
 
 async def query_lm_studio(conversation):
