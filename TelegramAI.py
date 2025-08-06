@@ -448,14 +448,14 @@ def ask_lmstudio(user_id, message_content):
     
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model": "gemma-3-12b-it-qat",
-        "messages": messages,
-        "temperature": 0.8,
-        "top_p": 0.9,
-        "max_tokens": 6000,
-        "stream": True,
-        "frequency_penalty": 0.2,
-        "stop": ["\nUser:", "</end>"]
+    "model": model_name,
+    "messages": messages,
+    "temperature": 0.8,
+    "top_p": 0.9,
+    "max_tokens": 6000,
+    "stream": True,
+    "frequency_penalty": 0.2,
+    "stop": ["\nUser:", "</end>"]
     }
 
     try:
@@ -584,6 +584,8 @@ def process_buffered_messages(user_id):
     combined_content = []
     user_name = messages[0].from_user.first_name
     chat_id = messages[0].chat.id
+    has_images = any(msg.photo for msg in messages)
+    model_name = "gemma-3-12b-it-qat" if has_images else "openai/gpt-oss-20b"
     
     # Проверяем наличие URL в сообщениях
     url_pattern = re.compile(r'(https?://[^\s]+)')
