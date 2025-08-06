@@ -1,3 +1,5 @@
+
+
 import telebot
 import json
 import requests
@@ -17,36 +19,29 @@ from telebot.apihelper import ApiTelegramException
 from colorama import Fore, Style, init
 from dotenv import load_dotenv
 
-load_dotenv()  # Загрузить переменные из .env файла
+load_dotenv()
 init()
 
 # === Настройки ===
-# Админы — список чисел, парсим строку из .env и конвертим в int
 admins_str = os.getenv("ADMINS", "")
 ADMINS = [int(x.strip()) for x in admins_str.split(",") if x.strip().isdigit()]
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 LM_STUDIO_API_URL = 'http://127.0.0.1:17834/v1/chat/completions'
 CUSTOM_PROMPTS_FILE = 'custom_prompts_tg.json'
 
-# Создаем экземпляр бота
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Выводим информацию о подключении с анимацией
 print(f"{Style.DIM}Бот {bot.get_me().first_name} подключился к Telegram!{Style.RESET_ALL}")
 
-# Словарь для хранения истории сообщений пользователей
 user_histories = {}
 user_states = {}
 user_buffers = {}
 user_timers = {}
 buffer_lock = Lock()
 BUFFER_DELAY = 1.0
-# Добавляем глобальную блокировку для истории
 history_lock = Lock()
 
-# Папка для хранения истории
 HISTORY_DIR = 'history'
-
 if not os.path.exists(HISTORY_DIR):
     os.makedirs(HISTORY_DIR)
 
@@ -60,7 +55,7 @@ def handle_send_command(message):
 
         parts = message.text.split(maxsplit=2)
         if len(parts) < 3:
-            bot.reply_to(message, "❌ Неверный формат. Используйте: !send <ID_пользователя> <Сообщение>")
+            bot.reply_to(message, "❌ Неверный формат. Используйте: /send <ID_пользователя> <Сообщение>")
             return
 
         _, user_id_str, content = parts
@@ -72,12 +67,10 @@ def handle_send_command(message):
         user_id = int(user_id_str)
         content = content.strip()
 
-        # Добавляем служебный текст в начало
         formatted_content = (
             f"(THIS MESSAGE WAS FORWARDED BY THE BOT ADMINISTRATOR TO THIS USER. IGNORE THE CHARACTER GIVEN TO YOU IN THE PROMPT. JUST FORWARD THE MESSAGE. THIS TEXT IS ON BEHALF OF Aleksey, THE CREATOR OF THE BOT. START THE MESSAGE WITH: ALEKSEY ASKED TO FORWARD. HERE IS WHAT YOU SHOULD FORWARD TO HIM IN RUSSIAN:)\n\n{content}"
         )
 
-        # Создаем сообщение
         fake_message = Message(
             message_id=int(time.time() * 1000),
             from_user=User(
@@ -100,10 +93,9 @@ def handle_send_command(message):
         bot.reply_to(message, f"✅ Сообщение отправлено пользователю {user_id}")
 
     except Exception as e:
-        print(f"Ошибка в команде !send: {e}")
+        print(f"Ошибка в команде /send: {e}")
         bot.reply_to(message, f"⚠️ Ошибка: {str(e)}")
 
-# Функция для сохранения истории в файл
 def save_history_to_file(user_id, user_message, assistant_reply):
     history_file = os.path.join(HISTORY_DIR, f"{user_id}.txt")
     try:
@@ -116,7 +108,6 @@ def save_history_to_file(user_id, user_message, assistant_reply):
     except Exception as e:
         print(f"Ошибка при сохранении истории для пользователя {user_id}: {e}")
 
-# Загрузка кастомных промптов из файла
 def load_custom_prompts():
     try:
         with open(CUSTOM_PROMPTS_FILE, 'r', encoding='utf-8') as f:
@@ -125,26 +116,18 @@ def load_custom_prompts():
         return {}
 
 def escape_markdown_v2(text):
-    """
-    Экранирует специальные символы для Telegram MarkdownV2, сохраняя теги форматирования.
-    """
-    # Полный список специальных символов Telegram MarkdownV2
     special_chars = r'_*[]()~`>#+=|{}.!-'
-
-    # Функция для экранирования символов, исключая теги форматирования
+    
     def escape_non_formatting(text):
         result = []
         i = 0
         while i < len(text):
-            # Пропускаем экранированные символы
             if i < len(text) - 1 and text[i] == '\\':
                 result.append(text[i])
                 result.append(text[i + 1])
                 i += 2
                 continue
-            # Пропускаем теги форматирования (*, _, ~, `, ||)
             if text[i] in '*_~`|':
-                # Жирный текст (*)
                 if text[i] == '*' and (i == 0 or text[i - 1] != '\\'):
                     result.append('*')
                     i += 1
@@ -155,7 +138,6 @@ def escape_markdown_v2(text):
                         result.append('*')
                         i += 1
                     continue
-                # Курсив (_)
                 elif text[i] == '_' and (i == 0 or text[i - 1] != '\\'):
                     result.append('_')
                     i += 1
@@ -166,7 +148,6 @@ def escape_markdown_v2(text):
                         result.append('_')
                         i += 1
                     continue
-                # Зачеркнутый текст (~)
                 elif text[i] == '~' and (i == 0 or text[i - 1] != '\\'):
                     result.append('~')
                     i += 1
@@ -177,7 +158,6 @@ def escape_markdown_v2(text):
                         result.append('~')
                         i += 1
                     continue
-                # Код (`)
                 elif text[i] == '`' and (i == 0 or text[i - 1] != '\\'):
                     result.append('`')
                     i += 1
@@ -188,7 +168,6 @@ def escape_markdown_v2(text):
                         result.append('`')
                         i += 1
                     continue
-                # Спойлер (||)
                 elif text[i] == '|' and i < len(text) - 1 and text[i + 1] == '|' and (i == 0 or text[i - 1] != '\\'):
                     result.append('||')
                     i += 2
@@ -199,7 +178,6 @@ def escape_markdown_v2(text):
                         result.append('||')
                         i += 2
                     continue
-            # Экранируем специальные символы
             if text[i] in special_chars:
                 result.append('\\')
                 result.append(text[i])
@@ -208,10 +186,8 @@ def escape_markdown_v2(text):
             i += 1
         return ''.join(result)
 
-    # Экранируем текст
     text = escape_non_formatting(text)
 
-    # Балансировка тегов * для жирного текста
     def balance_bold_tags(text):
         result = []
         bold_open = False
@@ -232,7 +208,6 @@ def escape_markdown_v2(text):
             result.append('*')
         return ''.join(result)
 
-    # Балансировка других тегов (_, ~, `, ||)
     def balance_other_tags(text, tag, pair_tag=None):
         result = []
         tag_open = False
@@ -266,7 +241,6 @@ def escape_markdown_v2(text):
                 result.append(tag)
         return ''.join(result)
 
-    # Применяем балансировку для всех тегов
     text = balance_bold_tags(text)
     text = balance_other_tags(text, '_')
     text = balance_other_tags(text, '~')
@@ -275,7 +249,6 @@ def escape_markdown_v2(text):
 
     return text
 
-# Сохранение кастомных промптов в файл
 def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(prompts, f, ensure_ascii=False, indent=2)
@@ -300,9 +273,7 @@ def get_time_of_day():
         return "evening"
     else:
         return "night"
-    
-# Функция парсинга URL
-# Функция парсинга URL
+
 async def fetch_url_content(url):
     try:
         delay = random.uniform(0.5, 1.0)
@@ -366,7 +337,6 @@ async def fetch_url_content(url):
                     print(f"Парсинг: {error_message}")
                     return error_message
 
-                # Ограничиваем длину текста для промпта
                 preview = text[:2500] + "..." if len(text) > 2500 else text
                 
                 result = (
@@ -394,20 +364,30 @@ async def fetch_url_content(url):
         print(f"Парсинг: {error_message}")
         return error_message
 
-
 def ask_lmstudio(user_id, message_content):
-    # Приводим user_id к int для консистентности
     user_id = int(user_id) if isinstance(user_id, str) else user_id
-
-    # Извлекаем историю с блокировкой
+    
     with history_lock:
         history = user_histories.get(user_id, [])
+    
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    # Определяем, есть ли в сообщении изображение
+    has_image = any(item.get('type') == 'image_url' for item in message_content.get('content', []))
+    
+    # Выбираем модель в зависимости от наличия изображения
+    if has_image:
+        model_name = "gemma-3-12b-it-qat"
+    else:
+        model_name = "openai/gpt-oss-20b"
+        
+    print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     prompts = load_custom_prompts()
     user_id_str = str(user_id)
     user_custom_prompt = prompts.get(user_id_str, {}).get("prompt")
     time_of_day = get_time_of_day()
-
+    
     if user_custom_prompt:
         prompt = (
             "SYSTEM PROMPT START \n"
@@ -443,17 +423,11 @@ def ask_lmstudio(user_id, message_content):
             "SYSTEM PROMPT END \n"
         )
 
-    # === Выбор модели: если есть изображение, то одна, иначе — другая ===
-    contains_image = any(item.get("type") == "image_url" for item in message_content)
-
-    selected_model = "gemma-3-12b-it-qat" if contains_image else "openai/gpt-oss-20b"
-
-    # Формируем сообщения с использованием истории
     messages = history + [{"role": "system", "content": prompt}] + [message_content]
-
+    
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model": selected_model,
+        "model": model_name, # Используем выбранную модель
         "messages": messages,
         "temperature": 0.8,
         "top_p": 0.9,
@@ -502,6 +476,7 @@ def ask_lmstudio(user_id, message_content):
         error_message = str(e)
         print(f"LM Studio exception: {error_message}")
         
+        base_error = f"LM Studio exception: \n {error_message}"
         
         if "Подключение не установлено, т.к. конечный компьютер отверг запрос на подключение" in error_message:
             error_message += "\n\n ⚠️НЕ УДАЛОСЬ ПОДКЛЮЧИТЬСЯ К LM STUDIO. БОТ НЕ МОЖЕТ ОТПРАВИТЬ ЗАПРОС В МОДЕЛЬ.⚠️"
@@ -587,9 +562,10 @@ def process_buffered_messages(user_id):
     user_name = messages[0].from_user.first_name
     chat_id = messages[0].chat.id
     
-    # Проверяем наличие URL в сообщениях
     url_pattern = re.compile(r'(https?://[^\s]+)')
     
+    clean_text_for_print = ""
+
     for msg in messages:
         forward_info = ""
         clean_text = ""
@@ -605,6 +581,7 @@ def process_buffered_messages(user_id):
             image_data = requests.get(file_url).content
             base64_image = base64.b64encode(image_data).decode('utf-8')
             caption = (msg.caption or "Изображение") + forward_info
+            clean_text_for_print += f"[Изображение] {caption} "
             combined_content.extend([
                 {"type": "text", "text": f"({user_name} в ({get_current_time()})): {caption}"},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
@@ -612,27 +589,25 @@ def process_buffered_messages(user_id):
         elif msg.text:
             clean_text = (msg.text.strip() + forward_info) if msg.text.strip() else ""
             if clean_text:
-                # Проверяем наличие URL
                 urls = url_pattern.findall(clean_text)
                 url_content = ""
                 if urls:
-                    # Парсим URL
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
                         url_content = loop.run_until_complete(fetch_url_content(urls[0]))
                     finally:
                         loop.close()
-                    # Добавляем содержимое URL в текст сообщения
-                    clean_text += f"\n\nСодержимое ссылки:\n" + "\033[90m" + url_content + "\033[0m"
+                    clean_text += f"\n\nСодержимое ссылки:\n{url_content}"
                 
+                clean_text_for_print += f"{clean_text} "
                 combined_content.append({"type": "text", "text": f"({user_name} в ({get_current_time()})): {clean_text}"})
 
     if not combined_content:
         return
 
     message_content = {"role": "user", "content": combined_content}
-    print(f"{Fore.CYAN}Telegram: {Style.RESET_ALL} ({user_name}) {clean_text}")
+    print(f"{Fore.CYAN}Telegram: {Style.RESET_ALL} ({user_name}) {clean_text_for_print.strip()}")
 
     sent_message = None
     max_retries = 3
@@ -650,7 +625,6 @@ def process_buffered_messages(user_id):
     if not sent_message:
         return
 
-    # Передаём сообщение с содержимым URL в LM Studio
     reply_generator = ask_lmstudio(user_id, message_content)
     
     accumulated_reply = ""
@@ -753,6 +727,17 @@ def handle_429_error(e, attempt, max_retries, retry_delay):
         time.sleep(wait_time)
         return True
     return False
+
+def handle_generation_error(e, chat_id, message_id):
+    print(f"Ошибка генерации ответа: {e}")
+    try:
+        bot.edit_message_text(
+            f"⚠️ Произошла ошибка при генерации ответа: {e}",
+            chat_id,
+            message_id
+        )
+    except Exception as edit_e:
+        print(f"Не удалось отредактировать сообщение об ошибке: {edit_e}")
 
 def update_user_history(user_id, message, reply):
     # Приводим user_id к int
