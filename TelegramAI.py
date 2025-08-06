@@ -398,16 +398,16 @@ async def fetch_url_content(url):
 def ask_lmstudio(user_id, message_content):
     # Приводим user_id к int для консистентности
     user_id = int(user_id) if isinstance(user_id, str) else user_id
-    
+
     # Извлекаем историю с блокировкой
     with history_lock:
         history = user_histories.get(user_id, [])
-    
+
     prompts = load_custom_prompts()
     user_id_str = str(user_id)
     user_custom_prompt = prompts.get(user_id_str, {}).get("prompt")
     time_of_day = get_time_of_day()
-    
+
     if user_custom_prompt:
         prompt = (
             "SYSTEM PROMPT START \n"
@@ -443,19 +443,24 @@ def ask_lmstudio(user_id, message_content):
             "SYSTEM PROMPT END \n"
         )
 
+    # === Выбор модели: если есть изображение, то одна, иначе — другая ===
+    contains_image = any(item.get("type") == "image_url" for item in message_content)
+
+    selected_model = "gemma-3-12b-it-qat" if contains_image else "openai/gpt-oss-20b"
+
     # Формируем сообщения с использованием истории
     messages = history + [{"role": "system", "content": prompt}] + [message_content]
-    
+
     headers = {"Content-Type": "application/json"}
     payload = {
-    "model": model_name,
-    "messages": messages,
-    "temperature": 0.8,
-    "top_p": 0.9,
-    "max_tokens": 6000,
-    "stream": True,
-    "frequency_penalty": 0.2,
-    "stop": ["\nUser:", "</end>"]
+        "model": selected_model,
+        "messages": messages,
+        "temperature": 0.8,
+        "top_p": 0.9,
+        "max_tokens": 6000,
+        "stream": True,
+        "frequency_penalty": 0.2,
+        "stop": ["\nUser:", "</end>"]
     }
 
     try:
@@ -497,16 +502,13 @@ def ask_lmstudio(user_id, message_content):
         error_message = str(e)
         print(f"LM Studio exception: {error_message}")
         
-        # Формируем базовое сообщение об ошибке
-        base_error = f"LM Studio exception: \n {error_message}"
         
-        # Добавляем специфичное описание для ошибки подключения
         if "Подключение не установлено, т.к. конечный компьютер отверг запрос на подключение" in error_message:
             error_message += "\n\n ⚠️НЕ УДАЛОСЬ ПОДКЛЮЧИТЬСЯ К LM STUDIO. БОТ НЕ МОЖЕТ ОТПРАВИТЬ ЗАПРОС В МОДЕЛЬ.⚠️"
         elif "404 Client Error: Not Found for url:" in error_message:
             error_message += "\n\n ⚠️Загрузка модели прервана из-за нехватки системных ресурсов. \nПерегрузка системы, скорее всего, приведет к ее зависанию. \nЕсли вы считаете, что это ошибка, попробуйте изменить ограничения загрузки модели в настройках.⚠️"
         
-        yield error_message  # Отправляем полное сообщение с описанием
+        yield error_message
         
         if "'str' object has no attribute 'get'" in error_message:
             with history_lock:
@@ -584,8 +586,6 @@ def process_buffered_messages(user_id):
     combined_content = []
     user_name = messages[0].from_user.first_name
     chat_id = messages[0].chat.id
-    has_images = any(msg.photo for msg in messages)
-    model_name = "gemma-3-12b-it-qat" if has_images else "openai/gpt-oss-20b"
     
     # Проверяем наличие URL в сообщениях
     url_pattern = re.compile(r'(https?://[^\s]+)')
