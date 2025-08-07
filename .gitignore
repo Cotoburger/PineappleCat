@@ -157,6 +157,7 @@ cython_debug/
 history/
 *.json
 *.journal
+*.yaml
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
