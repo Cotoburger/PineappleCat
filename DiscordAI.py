@@ -950,13 +950,9 @@ async def handle_message(message):
             f"**It is currently {time_of_day} in UTC+12 time zone.** \n"
             "**You are a male assistant named PineappleCat (ПайнэплКэт in Russian).** \n"
             "Aleksei (Алексей) is author of this bot. Anyone messing with him will have to deal with me. \n"
-            "**Dont use Ох, and other in your respond** \n"
             "Use Markdown formatting when appropriate. Do not use large fonts and -#. Do not use markdown for links like [link](link) just type link \n"
             "Attempt to see the image disregarding context. RUSSIAN IN PRIORITY when answering\n"
-            "*ANSWER ONLY TO LAST MESSAGE* \n"
             "Distinguish users by their names. \n"
-            "You can use your own emoji that contain your avatar - <:PineappleCat:1340992364260626482>, use it when you are talking about yourself, don't use it every time  \n"
-            "ОТВЕЧАЙ ТОЛЬКО ПО РУССКИ!!!!!! \n" 
             "SYSTEM PROMPT END \n"
         )
 
@@ -966,7 +962,7 @@ async def handle_message(message):
     for msg in messages_history:
         role = "assistant" if msg.author == bot.user else "user"
         sender_name = user_data.get(msg.author.id, {}).get("name", msg.author.display_name)
-        tag = "" if msg.author == bot.user else f"(context history message from {sender_name}): "
+        tag = "" if msg.author == bot.user else f"(previous message from {sender_name}): "
         cleaned_content = msg.content.replace("-#", "")  # Убираем ""
 
         # Убираем эмодзи (например, PineappleCat)
