@@ -117,8 +117,11 @@ def load_custom_prompts():
 
 def escape_markdown_v2(text: str):
     chars = ['_', '(', ')', '~', '>', '+', '-', '=', '|', '{', '}', '.', '!']
+    replacements = {"###": "#", "##": "#"}
     for char in chars:
         text = text.replace(char, f'\\{char}')
+    for char, new_char in replacements.items():
+        text = text.replace(char, new_char)
     return text
 
 def save_custom_prompts(prompts):
