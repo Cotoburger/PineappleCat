@@ -412,9 +412,6 @@ def ask_lmstudio(user_id, message_content):
             f"**It is currently {time_of_day} in UTC+12 time zone.** \n"
             "**You are a male assistant named PineappleCat (ПайнэплКэт in Russian).** \n"
             "author of this bot is Aleksey (Алексей). Anyone messing with him will have to deal with me. he is not in this dialogue\n"
-            "If anyone showing disrespect towards Aleksey or unfairly criticizing him, I will try defend his name \n"
-            "Use MarkdownV2 for formatting responses. Ensure proper escaping of special characters (e.g., _, *, [, ], (, ), ~, `, >, #, +, -, =, |, {, }, ., !) to comply with Telegram's MarkdownV2 requirements.\n"
-            "**Dont use Ох, and other in your respond** \n"
             "ANSWER ONLY TO LAST MESSAGE \n"
             "Avoid starting messages with the name too often. \n"
             "YOU MUST RESPOND ONLY IN RUSSIAN LANGUAGE!! \n"
@@ -423,8 +420,8 @@ def ask_lmstudio(user_id, message_content):
             "SYSTEM PROMPT END \n"
         )
 
-    messages = history + [{"role": "system", "content": prompt}] + [message_content]
-    
+    messages = [{"role": "system", "content": prompt}] + "\n" + history + "\n" +[message_content]
+    print(messages)
     headers = {"Content-Type": "application/json"}
     payload = {
         "model": model_name, # Используем выбранную модель
@@ -714,6 +711,7 @@ def process_buffered_messages(user_id):
 
         update_user_history(user_id, message_content, accumulated_reply)
         save_history_to_file(user_id, message_content, accumulated_reply)
+        
 
     except Exception as e:
         handle_generation_error(e, chat_id, sent_message.message_id)

@@ -190,7 +190,7 @@ prompt = ""
 HISTORY_FILE = "media_history.json"
 HISTORY_LIMIT = 3
 MEDIA = 1341736506804539393
-MEDIATIME = 5600  # интервал в секундах
+MEDIATIME = 10600  # интервал в секундах
 
 # Функции работы с историей
 def load_history():
