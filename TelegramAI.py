@@ -481,7 +481,7 @@ def process_buffered_messages(user_id):
     retry_delay = 5
     for attempt in range(max_retries):
         try:
-            sent_message = bot.send_message(chat_id, "💬")
+            sent_message = bot.send_message(chat_id, "💬", parse_mode="MarkdownV2")
             break
         except ApiTelegramException as e:
             if handle_429_error(e, attempt, max_retries, retry_delay):
