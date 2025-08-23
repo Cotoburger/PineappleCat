@@ -117,12 +117,8 @@ def load_custom_prompts():
 
 def escape_markdown_v2(text: str):
     chars = ['_', '(', ')', '~', '>', '+', '-', '=', '|', '{', '}', '.', '!']
-    replacements = {"###": "#", "##": "#"}
     for char in chars:
         text = text.replace(char, f'\\{char}')
-    for char, new_char in replacements.items():
-        text = text.replace(char, new_char)
-    return text
 
 def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
@@ -531,6 +527,7 @@ def process_buffered_messages(user_id):
                             continue
 
                         bot.edit_message_text(
+                            parse_mode="MarkdownV2",
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
                             text=trimmed_reply
@@ -553,7 +550,6 @@ def process_buffered_messages(user_id):
             for edit_attempt in range(max_retries):
                 try:
                     escaped_final_text = escape_markdown_v2(final_text)
-                    print(escaped_final_text)
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=sent_message.message_id,
@@ -570,7 +566,8 @@ def process_buffered_messages(user_id):
                         bot.edit_message_text(
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
-                            text=final_text
+                            text=final_text,
+                            parse_mode="MarkdownV2"
                         )
                         break
                     elif handle_429_error(e, edit_attempt, max_retries, retry_delay):
