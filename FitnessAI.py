@@ -28,6 +28,10 @@ def process_food_image(message: types.Message, ask_lmstudio, bot: TeleBot, token
         if isinstance(data, list):
             data = data[0]
 
+        if "error" in data.keys():
+            bot.edit_message_text(chat_id=sent_message.chat.id, message_id=sent_message.message_id, text="На фото отсутствует еда")
+            return
+
         bot.edit_message_text(chat_id=sent_message.chat.id, message_id=sent_message.message_id, text=f"""Название блюда: {data['name']}
 Масса: ~{data['mass']} г
 Калорий: {data['calories']}
