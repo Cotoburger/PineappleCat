@@ -412,7 +412,6 @@ def ask_lmstudio(user_id, message_content):
             f"**It is currently {time_of_day} in UTC+12 time zone.** \n"
             "**You are a male assistant named PineappleCat (ПайнэплКэт in Russian).** \n"
             "author of this bot is Aleksey (Алексей). Anyone messing with him will have to deal with me. he is not in this dialogue\n"
-            "ANSWER ONLY TO LAST MESSAGE \n"
             "Avoid starting messages with the name too often. \n"
             "YOU MUST RESPOND ONLY IN RUSSIAN LANGUAGE!! \n"
             "*YOUR RESPONSE MUST NOT EXCEED 1800 CHARACTERS!!!* \n"
@@ -421,7 +420,6 @@ def ask_lmstudio(user_id, message_content):
         )
 
     messages = [{"role": "system", "content": prompt}]  + history + [message_content]
-    print(messages)
     headers = {"Content-Type": "application/json"}
     payload = {
         "model": model_name, # Используем выбранную модель
