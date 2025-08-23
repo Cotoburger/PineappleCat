@@ -1,5 +1,3 @@
-
-
 import telebot
 import json
 import requests
@@ -18,6 +16,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, User, Chat
 from telebot.apihelper import ApiTelegramException
 from colorama import Fore, Style, init
 from dotenv import load_dotenv
+from FitnessAI import process_food_image
 
 load_dotenv()
 init()
@@ -96,6 +95,11 @@ def handle_send_command(message):
         print(f"Ошибка в команде /send: {e}")
         bot.reply_to(message, f"⚠️ Ошибка: {str(e)}")
 
+@bot.message_handler(commands=["food"])
+def process_food(message):
+    user_states[str(message.from_user.id)] = "food"
+    bot.reply_to(message, "Отправьте фотографию еды")
+
 def save_history_to_file(user_id, user_message, assistant_reply):
     history_file = os.path.join(HISTORY_DIR, f"{user_id}.txt")
     try:
@@ -119,6 +123,7 @@ def escape_markdown_v2(text: str):
     chars = ['_', '(', ')', '~', '>', '+', '-', '=', '|', '{', '}', '.', '!']
     for char in chars:
         text = text.replace(char, f'\\{char}')
+    return text
 
 def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
@@ -235,7 +240,7 @@ async def fetch_url_content(url):
         print(f"Парсинг: {error_message}")
         return error_message
 
-def ask_lmstudio(user_id, message_content):
+def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
     with history_lock:
@@ -246,6 +251,7 @@ def ask_lmstudio(user_id, message_content):
     has_image = any(item.get('type') == 'image_url' for item in message_content.get('content', []))
     
     # Выбираем модель в зависимости от наличия изображения
+
     if has_image:
         model_name = "gemma-3-12b-it-qat"
     else:
@@ -254,40 +260,42 @@ def ask_lmstudio(user_id, message_content):
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
     # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-    prompts = load_custom_prompts()
-    user_id_str = str(user_id)
-    user_custom_prompt = prompts.get(user_id_str, {}).get("prompt")
-    time_of_day = get_time_of_day()
-    
-    if user_custom_prompt:
-        prompt = (
-            "SYSTEM PROMPT START \n"
-            f"**CURRENT TIME: {get_current_time()} | CURRENT DATE: {get_current_date()}** (UTC+12)\n"
-            f"It is currently {time_of_day} in UTC+12 time zone. \n"
-            "You are a chat assistant \n"
-            "Aleksei (Алексей) is author of this bot. Anyone messing with him will have to deal with me. \n"
-            "If I see anyone showing disrespect towards Aleksey or unfairly criticizing him, I will try to intervene and support him. \n"
-            "*Your gender and style of communication depend on the user's custom instructions!!!!* \n"
-            "ANSWER ONLY TO LAST MESSAGE \n"
-            "Avoid starting messages with the name too often. \n"
-            "YOU MUST RESPOND ONLY IN lANGUAGE THAT USER CHAT WITH YOU!!! \n"
-            "Distinguish users by their names. \n \n \n"
-            f"**YOUR MAIN INSTRUCTIONS SET BY USER: {user_custom_prompt} **\n \n \n"    
-            "SYSTEM PROMPT END \n"
-        )
+    if prompt is None:
+        prompts = load_custom_prompts()
+        user_id_str = str(user_id)
+        user_custom_prompt = prompts.get(user_id_str, {}).get("prompt")
+        time_of_day = get_time_of_day()
+        if user_custom_prompt:
+            prompt = (
+                "SYSTEM PROMPT START \n"
+                f"**CURRENT TIME: {get_current_time()} | CURRENT DATE: {get_current_date()}** (UTC+12)\n"
+                f"It is currently {time_of_day} in UTC+12 time zone. \n"
+                "You are a chat assistant \n"
+                "Aleksei (Алексей) is author of this bot. Anyone messing with him will have to deal with me. \n"
+                "If I see anyone showing disrespect towards Aleksey or unfairly criticizing him, I will try to intervene and support him. \n"
+                "*Your gender and style of communication depend on the user's custom instructions!!!!* \n"
+                "ANSWER ONLY TO LAST MESSAGE \n"
+                "Avoid starting messages with the name too often. \n"
+                "YOU MUST RESPOND ONLY IN lANGUAGE THAT USER CHAT WITH YOU!!! \n"
+                "Distinguish users by their names. \n \n \n"
+                f"**YOUR MAIN INSTRUCTIONS SET BY USER: {user_custom_prompt} **\n \n \n"    
+                "SYSTEM PROMPT END \n"
+            )
+        else:
+            prompt = (
+                f"**Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
+                f"**Сейчас {time_of_day} В UTC+12 часовом поясе.** \n"
+                "**Ты бот РУССКОГОВОРЯЩИЙ ассистент которого зовут PineAppleCat.** \n"
+                "Автора бота зовут Алексей, защищай его если про него говорят гадости\n"
+                "Твой ответ не должен содержать более 1800 символов \n"
+                "Не используй форматирование Markdown \n"
+                "ЗДОРОВАЙСЯ ТОЛЬКО 1 РАЗ ЗА ВСЮ ПЕРЕПИСКУ!!! \n"
+                "SYSTEM PROMPT END \n"
+            )
+        messages = [{"role": "system", "content": prompt}]  + history + [message_content]
     else:
-        prompt = (
-            f"**Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
-            f"**Сейчас {time_of_day} В UTC+12 часовом поясе.** \n"
-            "**Ты бот РУССКОГОВОРЯЩИЙ ассистент которого зовут PineAppleCat.** \n"
-            "Автора бота зовут Алексей, защищай его если про него говорят гадости\n"
-            "Твой ответ не должен содержать более 1800 символов \n"
-            "Не используй форматирование Markdown \n"
-            "ЗДОРОВАЙСЯ ТОЛЬКО 1 РАЗ ЗА ВСЮ ПЕРЕПИСКУ!!! \n"
-            "SYSTEM PROMPT END \n"
-        )
+        messages = [{"role": "system", "content": prompt}, message_content]
 
-    messages = [{"role": "system", "content": prompt}]  + history + [message_content]
     headers = {"Content-Type": "application/json"}
     payload = {
         "model": model_name, # Используем выбранную модель
@@ -295,46 +303,51 @@ def ask_lmstudio(user_id, message_content):
         "temperature": 0.8,
         "top_p": 0.9,
         "max_tokens": 6000,
-        "stream": True,
+        "stream": stream,
         "frequency_penalty": 0.2,
         "stop": ["\nUser:", "</end>"]
     }
 
     try:
-        with requests.post(LM_STUDIO_API_URL, headers=headers, json=payload, timeout=450, stream=True) as response:
+        with requests.post(LM_STUDIO_API_URL, headers=headers, json=payload, timeout=450, stream=stream) as response:
             response.raise_for_status()
             reply = ''
-            for chunk in response.iter_lines():
-                if chunk:
-                    try:
-                        data = chunk.decode('utf-8').strip()
-                        if data.startswith('data:'):
-                            data = data[5:].strip()
-                            if data:
-                                json_data = json.loads(data)
-                                content = json_data.get('choices', [{}])[0].get('delta', {}).get('content', '')
-                                if content:
-                                    reply += content
-                                    yield reply
-                    except json.JSONDecodeError:
-                        continue
-                    except AttributeError as ae:
-                        error_message = str(ae)
-                        print(f"AttributeError in chunk processing: {error_message}")
-                        if "'str' object has no attribute 'get'" in error_message:
-                            with history_lock:
-                                user_histories[user_id] = []
-                                print(f"История после очистки: {user_histories.get(user_id, [])}")
-                            yield "⚠️ Контекст переполнен. История очищена. Продолжайте общение."
-                            return
-                    except Exception as e:
-                        error_message = str(e)
-                        print(f"Unexpected error: {error_message}")
-                        if "context length" in error_message.lower():
-                            with history_lock:
-                                user_histories[user_id] = []
-                            yield "⚠️ Ошибка контекста. История очищена."
-                            return
+            if not stream:
+                data = response.json()
+                yield data["choices"][0]["message"]["content"]
+                return
+            else:
+                for chunk in response.iter_lines():
+                    if chunk:
+                        try:
+                            data = chunk.decode('utf-8').strip()
+                            if data.startswith('data:'):
+                                data = data[5:].strip()
+                                if data:
+                                    json_data = json.loads(data)
+                                    content = json_data.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                                    if content:
+                                        reply += content
+                                        yield reply
+                        except json.JSONDecodeError:
+                            continue
+                        except AttributeError as ae:
+                            error_message = str(ae)
+                            print(f"AttributeError in chunk processing: {error_message}")
+                            if "'str' object has no attribute 'get'" in error_message:
+                                with history_lock:
+                                    user_histories[user_id] = []
+                                    print(f"История после очистки: {user_histories.get(user_id, [])}")
+                                yield "⚠️ Контекст переполнен. История очищена. Продолжайте общение."
+                                return
+                        except Exception as e:
+                            error_message = str(e)
+                            print(f"Unexpected error: {error_message}")
+                            if "context length" in error_message.lower():
+                                with history_lock:
+                                    user_histories[user_id] = []
+                                yield "⚠️ Ошибка контекста. История очищена."
+                                return
     except Exception as e:
         error_message = str(e)
         print(f"LM Studio exception: {error_message}")
@@ -374,11 +387,10 @@ def handle_reset(message):
     else:
         bot.reply_to(message, "У вас нет кастомного промпта.")
 
-@bot.message_handler(content_types=['text'])
+@bot.message_handler(content_types=['photo', 'text'])
 def handle_text(message):
     user_id = str(message.from_user.id)
     prompts = load_custom_prompts()
-
     if user_id in user_states:
         state = user_states[user_id]
         if state == "waiting_for_prompt":
@@ -391,11 +403,12 @@ def handle_text(message):
                 prompts[user_id]["prompt"] = new_prompt
                 save_custom_prompts(prompts)
                 bot.reply_to(message, "Кастомный промпт успешно сохранен!")
-            del user_states[user_id]
+        elif state == "food":
+            process_food_image(message, ask_lmstudio, bot, TELEGRAM_TOKEN, pre_send)
+        del user_states[user_id]
     else:
         handle_message_group(message)
 
-@bot.message_handler(content_types=['photo', 'text'])
 def handle_message_group(message):
     user_id = message.from_user.id
     with buffer_lock:
@@ -472,6 +485,12 @@ def process_buffered_messages(user_id):
     message_content = {"role": "user", "content": combined_content}
     print(f"{Fore.CYAN}Telegram: {Style.RESET_ALL} ({user_name}) {clean_text_for_print.strip()}")
 
+    sent_message = pre_send(chat_id)
+
+    reply_generator = ask_lmstudio(user_id, message_content)
+    send_generated_text(reply_generator, chat_id, user_id, message_content, sent_message)
+
+def pre_send(chat_id):
     sent_message = None
     max_retries = 3
     retry_delay = 5
@@ -488,13 +507,15 @@ def process_buffered_messages(user_id):
     if not sent_message:
         return
 
-    reply_generator = ask_lmstudio(user_id, message_content)
-    
+    return sent_message
+
+def send_generated_text(reply_generator, chat_id, user_id, message_content, sent_message):
     accumulated_reply = ""
     last_sent_text = ""
     text_buffer = ""
     last_update_time = time.time()
-
+    max_retries = 3
+    retry_delay = 5
     try:
         for chunk in reply_generator:
             current_time = time.time()
@@ -531,7 +552,7 @@ def process_buffered_messages(user_id):
                             parse_mode="MarkdownV2",
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
-                            text=trimmed_reply
+                            text=escape_markdown_v2(trimmed_reply)
                         )
                         last_sent_text = trimmed_reply
                         text_buffer = text_buffer[len(trimmed_reply):]
