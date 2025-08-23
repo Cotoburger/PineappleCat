@@ -553,6 +553,7 @@ def process_buffered_messages(user_id):
             for edit_attempt in range(max_retries):
                 try:
                     escaped_final_text = escape_markdown_v2(final_text)
+                    print(escaped_final_text)
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=sent_message.message_id,
