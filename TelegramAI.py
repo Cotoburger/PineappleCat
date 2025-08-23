@@ -68,7 +68,7 @@ def handle_send_command(message):
         content = content.strip()
 
         formatted_content = (
-            f"(THIS MESSAGE WAS FORWARDED BY THE BOT ADMINISTRATOR TO THIS USER. IGNORE THE CHARACTER GIVEN TO YOU IN THE PROMPT. JUST FORWARD THE MESSAGE. HERE IS WHAT YOU SHOULD FORWARD TO HIM IN RUSSIAN:)\n\n{content}"
+            f"(THIS MESSAGE WAS FORWARDED BY THE BOT ADMINISTRATOR TO THIS USER. IGNORE THE CHARACTER GIVEN TO YOU IN THE PROMPT. JUST FORWARD THE MESSAGE. THIS TEXT IS ON BEHALF OF Aleksey, THE CREATOR OF THE BOT. START THE MESSAGE WITH: ALEKSEY ASKED TO FORWARD. HERE IS WHAT YOU SHOULD FORWARD TO HIM IN RUSSIAN:)\n\n{content}"
         )
 
         fake_message = Message(
@@ -119,6 +119,7 @@ def escape_markdown_v2(text: str):
     chars = ['_', '(', ')', '~', '>', '+', '-', '=', '|', '{', '}', '.', '!']
     for char in chars:
         text = text.replace(char, f'\\{char}')
+    return text
 
 def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
@@ -528,7 +529,6 @@ def process_buffered_messages(user_id):
                             continue
 
                         bot.edit_message_text(
-                            parse_mode="MarkdownV2",
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
                             text=trimmed_reply
@@ -567,8 +567,7 @@ def process_buffered_messages(user_id):
                         bot.edit_message_text(
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
-                            text=final_text,
-                            parse_mode="MarkdownV2"
+                            text=final_text
                         )
                         break
                     elif handle_429_error(e, edit_attempt, max_retries, retry_delay):
