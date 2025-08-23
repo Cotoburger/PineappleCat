@@ -420,7 +420,7 @@ def ask_lmstudio(user_id, message_content):
             "SYSTEM PROMPT END \n"
         )
 
-    messages = [{"role": "system", "content": prompt}]  + history +[message_content]
+    messages = [{"role": "system", "content": prompt}]  + history + [message_content]
     print(messages)
     headers = {"Content-Type": "application/json"}
     payload = {
