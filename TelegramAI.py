@@ -668,6 +668,7 @@ bot.message_handler(content_types=['text'])(handle_message_group)
 commands = [
     telebot.types.BotCommand("customize", "Позволяет задать кастомный промпт"),
     telebot.types.BotCommand("reset", "Сброс кастомизации")
+    telebot.types.BotCommand("food", "посчитать КБЖУ еды по фото")
 ]
 
 # Set bot commands
