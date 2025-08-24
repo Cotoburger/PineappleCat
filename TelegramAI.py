@@ -1,3 +1,5 @@
+import traceback
+
 import telebot
 import json
 import requests
@@ -17,6 +19,7 @@ from telebot.apihelper import ApiTelegramException
 from colorama import Fore, Style, init
 from dotenv import load_dotenv
 from FitnessAI import process_food_image
+import sqlite3
 
 load_dotenv()
 init()
@@ -27,6 +30,10 @@ ADMINS = [int(x.strip()) for x in admins_str.split(",") if x.strip().isdigit()]
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 LM_STUDIO_API_URL = 'http://127.0.0.1:17834/v1/chat/completions'
 CUSTOM_PROMPTS_FILE = 'custom_prompts_tg.json'
+db = sqlite3.connect("pineapplecat.db", check_same_thread=False)
+cursor = db.cursor()
+
+cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, goal INTEGER, current_cal INTEGER, last_update INTEGER)")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -97,8 +104,26 @@ def handle_send_command(message):
 
 @bot.message_handler(commands=["food"])
 def process_food(message):
+    cursor.execute("SELECT * FROM users WHERE tg_id=?", (message.from_user.id,))
+    user = cursor.fetchone()
+    if user is None:
+        user_states[str(message.from_user.id)] = "food_registration"
+        bot.reply_to(message, escape_markdown_v2("Для использования этой функции нам необходимо знать: ваш текущий вес и рост, а также желаемый вес. Отправьте нам эти данные в следующем формате:\n`ВАШ_ВЕС ВАШ_РОСТ ЖЕЛАЕМЫЙ_ВЕС`\nИли сами задайте суточный лимит, отправив число калорий."), parse_mode="MarkdownV2")
+        return
     user_states[str(message.from_user.id)] = "food"
     bot.reply_to(message, "Отправьте фотографию еды")
+
+@bot.message_handler(commands=["food_edit"])
+def food_edit(message):
+    cursor.execute("SELECT * FROM users WHERE tg_id=?", (message.from_user.id,))
+    user = cursor.fetchone()
+    if user is None:
+        user_states[str(message.from_user.id)] = "food_registration"
+    else:
+        user_states[str(message.from_user.id)] = "food_edit"
+    bot.reply_to(message, escape_markdown_v2(
+        "Отправьте нам ваш вес, рост и желаемый вес в следующем формате:\n`ВАШ_ВЕС ВАШ_РОСТ ЖЕЛАЕМЫЙ_ВЕС`\nИли сами задайте суточный лимит, отправив число калорий."),
+                 parse_mode="MarkdownV2")
 
 def save_history_to_file(user_id, user_message, assistant_reply):
     history_file = os.path.join(HISTORY_DIR, f"{user_id}.txt")
@@ -251,11 +276,13 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     has_image = any(item.get('type') == 'image_url' for item in message_content.get('content', []))
     
     # Выбираем модель в зависимости от наличия изображения
-
-    if has_image:
-        model_name = "gemma-3-12b-it-qat"
+    if os.getenv("DEV_FAST") is not None:
+        model_name = "google/gemma-3-4b"
     else:
-        model_name = "openai/gpt-oss-20b"
+        if has_image:
+            model_name = "gemma-3-12b-it-qat"
+        else:
+            model_name = "openai/gpt-oss-20b"
         
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
     # --- КОНЕЦ ИЗМЕНЕНИЯ ---
@@ -387,24 +414,60 @@ def handle_reset(message):
     else:
         bot.reply_to(message, "У вас нет кастомного промпта.")
 
+def calc_cal(message):
+    data = message.text.split(" ")
+    goal = None
+    if len(data) == 3:
+        sent_message = pre_send(message)
+        data = ask_lmstudio(message.from_user.id, {"role": "user", "content": [
+            {"type": "text", "text": f"{data[0]} {data[1]} {data[2]}"}]},
+                            "Ты - ИИ для подсчёта количества калорий, которые человек должен употребить за день. Пользователь тебе отправляет свои данные в следующем формате: ЕГО_ТЕКУЩИЙ_ВЕС ЕГО_РОСТ ЕГО_ЖЕЛАЕМЫЙ_ВЕС. Ты должен отправить только количество калорий для употребления в день. Только число.",
+                            False)
+        for part in data:
+            goal = int(part)
+            bot.edit_message_text(f"Подсчитали количество калорий для вас: {goal} калорий в день", sent_message.chat.id,
+                                  sent_message.id)
+    elif len(data) == 1:
+        goal = data[0]
+        bot.reply_to(message, "Установили ваш суточный лимит калорий.")
+    else:
+        bot.reply_to(message, "Отправьте данные в нужном формате.")
+        return None
+    return int(goal)
+
+
 @bot.message_handler(content_types=['photo', 'text'])
 def handle_text(message):
     user_id = str(message.from_user.id)
     prompts = load_custom_prompts()
     if user_id in user_states:
         state = user_states[user_id]
-        if state == "waiting_for_prompt":
-            new_prompt = message.text
-            if len(new_prompt) > 500:
-                bot.reply_to(message, "Промпт должен быть не длиннее 500 символов.")
-            else:
-                if user_id not in prompts:
-                    prompts[user_id] = {}
-                prompts[user_id]["prompt"] = new_prompt
-                save_custom_prompts(prompts)
-                bot.reply_to(message, "Кастомный промпт успешно сохранен!")
-        elif state == "food":
-            process_food_image(message, ask_lmstudio, bot, TELEGRAM_TOKEN, pre_send)
+        match state:
+            case "waiting_for_prompt":
+                new_prompt = message.text
+                if len(new_prompt) > 500:
+                    bot.reply_to(message, "Промпт должен быть не длиннее 500 символов.")
+                else:
+                    if user_id not in prompts:
+                        prompts[user_id] = {}
+                    prompts[user_id]["prompt"] = new_prompt
+                    save_custom_prompts(prompts)
+                    bot.reply_to(message, "Кастомный промпт успешно сохранен!")
+            case "food":
+                process_food_image(message, ask_lmstudio, bot, TELEGRAM_TOKEN, pre_send, db, cursor)
+            case "food_registration":
+                goal = calc_cal(message)
+                if goal is None:
+                    return
+                cursor.execute("INSERT INTO users(tg_id, goal, current_cal, last_updated) VALUES (?, ?, ?, ?)", (int(user_id), goal, 0, datetime.now().timestamp(), ))
+                db.commit()
+            case "food_edit":
+                goal = calc_cal(message)
+                if goal is None:
+                    return
+                cursor.execute("UPDATE users SET goal = ? WHERE tg_id = ?", (goal, int(user_id),))
+                db.commit()
+
         del user_states[user_id]
     else:
         handle_message_group(message)
@@ -490,13 +553,18 @@ def process_buffered_messages(user_id):
     reply_generator = ask_lmstudio(user_id, message_content)
     send_generated_text(reply_generator, chat_id, user_id, message_content, sent_message)
 
-def pre_send(chat_id):
+def pre_send(chat_id) -> telebot.types.Message:
     sent_message = None
     max_retries = 3
     retry_delay = 5
+    message_id = None
+    if isinstance(chat_id, telebot.types.Message):
+        message: telebot.types.Message = chat_id
+        chat_id = message.chat.id
+        message_id = message.id
     for attempt in range(max_retries):
         try:
-            sent_message = bot.send_message(chat_id, "💬", parse_mode="MarkdownV2")
+            sent_message = bot.send_message(chat_id, "💬", parse_mode="MarkdownV2", reply_to_message_id=message_id)
             break
         except ApiTelegramException as e:
             if handle_429_error(e, attempt, max_retries, retry_delay):
@@ -668,7 +736,8 @@ bot.message_handler(content_types=['text'])(handle_message_group)
 commands = [
     telebot.types.BotCommand("customize", "Позволяет задать кастомный промпт"),
     telebot.types.BotCommand("reset", "Сброс кастомизации"),
-    telebot.types.BotCommand("food", "посчитать КБЖУ еды по фото")
+    telebot.types.BotCommand("food", "посчитать КБЖУ еды по фото"),
+    telebot.types.BotCommand("food_edit", "изменить суточную цель калорий")
 ]
 
 # Set bot commands
@@ -693,6 +762,8 @@ def run_polling():
                 break
         except Exception as e:
             print(f"\033[91mНеизвестная ошибка polling: {e}\033[0m")
+            if os.getenv("DEV_FAST") is not None:
+                traceback.print_exc()
             time.sleep(retry_delay)
             if max_retries > 0:
                 max_retries -= 1
