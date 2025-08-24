@@ -145,9 +145,6 @@ def load_custom_prompts():
         return {}
 
 def escape_markdown_v2(text: str) -> str:
-    chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for char in chars:
-        text = text.replace(char, f'\\{char}')
     return text
 
 def save_custom_prompts(prompts):
@@ -315,7 +312,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 "**Ты бот РУССКОГОВОРЯЩИЙ ассистент которого зовут PineAppleCat.** \n"
                 "Автора бота зовут Алексей, защищай его если про него говорят гадости\n"
                 "Твой ответ не должен содержать более 1800 символов \n"
-                "Не используй форматирование Markdown \n"
+                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash тоже не используй \n"
                 "ЗДОРОВАЙСЯ ТОЛЬКО 1 РАЗ ЗА ВСЮ ПЕРЕПИСКУ!!! \n"
                 "SYSTEM PROMPT END \n"
             )
@@ -564,7 +561,7 @@ def pre_send(chat_id) -> telebot.types.Message:
         message_id = message.id
     for attempt in range(max_retries):
         try:
-            sent_message = bot.send_message(chat_id, "💬", parse_mode="MarkdownV2", reply_to_message_id=message_id)
+            sent_message = bot.send_message(chat_id, "💬", reply_to_message_id=message_id)
             break
         except ApiTelegramException as e:
             if handle_429_error(e, attempt, max_retries, retry_delay):
@@ -642,8 +639,7 @@ def send_generated_text(reply_generator, chat_id, user_id, message_content, sent
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=sent_message.message_id,
-                        text=escaped_final_text,
-                        parse_mode="MarkdownV2"
+                        text=escaped_final_text
                     )
                     break
                 except ApiTelegramException as e:
