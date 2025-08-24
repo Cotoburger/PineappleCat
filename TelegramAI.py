@@ -459,7 +459,7 @@ def handle_text(message):
                 goal = calc_cal(message)
                 if goal is None:
                     return
-                cursor.execute("INSERT INTO users(tg_id, goal, current_cal, last_updated) VALUES (?, ?, ?, ?)", (int(user_id), goal, 0, datetime.now().timestamp(), ))
+                cursor.execute("INSERT INTO users(tg_id, goal, current_cal, last_update) VALUES (?, ?, ?, ?)", (int(user_id), goal, 0, datetime.now().timestamp(), ))
                 db.commit()
             case "food_edit":
                 goal = calc_cal(message)
