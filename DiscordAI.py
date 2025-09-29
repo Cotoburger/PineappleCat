@@ -1,4 +1,3 @@
-import os
 import io
 import discord
 import PyPDF2
