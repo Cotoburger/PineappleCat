@@ -48,7 +48,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, self_bot=False)
 
 
-LM_STUDIO_URL = "http://127.0.0.1:17834/v1/chat/completions"
+LM_STUDIO_URL = "http://127.0.0.1:1783/v1/chat/completions"
 
 
 # Текущая модель по умолчанию

@@ -22,10 +22,10 @@ LAST_ID_FILE = "last_telegram_id.json"
 
 def extract_info(message):
     time_match = re.search(r"Время UTC:\s*(.+)", message)
-    coords_match = re.search(r"Координаты:\s*([0-9\., ]+)", message)
+    coords_match = re.search(r"Координаты:\s*([0-9.\-]+),\s*([0-9.\-]+)", message)
     dist_match = re.search(r"Расстояние от ПК:\s*(\d+)", message)
     depth_match = re.search(r"Глубина \(КМ\):\s*([0-9.]+)", message)
-    mag_match = re.search(r"Магнитуда:\s*([0-9.]+)", message)
+    mag_match = re.search(r"Магнитуда\s*\(Ml\):\s*([0-9.]+)", message)
     intensity_match = re.search(r"Интенсивность в ПК.*:\s*(\d+)", message)
 
     # Преобразование времени UTC в UTC+12

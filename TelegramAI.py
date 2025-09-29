@@ -28,7 +28,7 @@ init()
 admins_str = os.getenv("ADMINS", "")
 ADMINS = [int(x.strip()) for x in admins_str.split(",") if x.strip().isdigit()]
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-LM_STUDIO_API_URL = 'http://127.0.0.1:17834/v1/chat/completions'
+LM_STUDIO_API_URL = 'http://127.0.0.1:1783/v1/chat/completions'
 CUSTOM_PROMPTS_FILE = 'custom_prompts_tg.json'
 db = sqlite3.connect("pineapplecat.db", check_same_thread=False)
 cursor = db.cursor()
@@ -277,9 +277,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         model_name = "google/gemma-3-4b"
     else:
         if has_image:
-            model_name = "gemma-3-12b-it-qat"
+            model_name = "google/gemma-3-12b"
         else:
-            model_name = "openai/gpt-oss-20b"
+            model_name = "google/gemma-3-12b"
         
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
     # --- КОНЕЦ ИЗМЕНЕНИЯ ---
@@ -309,11 +309,12 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
             prompt = (
                 f"**Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
                 f"**Сейчас {time_of_day} В UTC+12 часовом поясе.** \n"
-                "**Ты бот РУССКОГОВОРЯЩИЙ ассистент которого зовут PineAppleCat.** \n"
-                "Автора бота зовут Алексей, защищай его если про него говорят гадости\n"
+                "**Ты бот РУССКОГОВОРЯЩИЙ мужского пола которого зовут PineAppleCat.** \n"
+                "Автора бота зовут Алексей\n"
                 "Твой ответ не должен содержать более 1800 символов \n"
                 "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash тоже не используй \n"
                 "ЗДОРОВАЙСЯ ТОЛЬКО 1 РАЗ ЗА ВСЮ ПЕРЕПИСКУ!!! \n"
+                "ВЕДИ СЕБЯ КАК РЕАЛЬНЫЙ ЧЕЛОВЕК И ОБЩАЙСЯ ПРЕИМУЩЕСТВЕННО НЕФОРМАЛЬНО НО В МЕРУ. \n"
                 "SYSTEM PROMPT END \n"
             )
         messages = [{"role": "system", "content": prompt}]  + history + [message_content]
@@ -703,7 +704,7 @@ def update_user_history(user_id, message, reply):
             "role": message["role"],
             "content": [
                 item for item in message["content"] 
-                if item["type"] == "text"
+                if item["type"] == "text" or item["type"] == "image_url"
             ]
         }
         
@@ -741,7 +742,7 @@ bot.set_my_commands(commands)
 
 # Обработка polling с повторными попытками
 def run_polling():
-    max_retries = 10
+    max_retries = 15
     retry_delay = 15
     while True:
         try:
