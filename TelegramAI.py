@@ -137,6 +137,45 @@ def save_history_to_file(user_id, user_message, assistant_reply):
     except Exception as e:
         print(f"Ошибка при сохранении истории для пользователя {user_id}: {e}")
 
+def load_history_from_file(user_id):
+    """Загружает историю сообщений пользователя из файла, если она есть."""
+    history_file = os.path.join(HISTORY_DIR, f"{user_id}.txt")
+    if not os.path.exists(history_file):
+        return []
+
+    history = []
+    try:
+        with open(history_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        current_role = None
+        for line in lines:
+            if line.strip():
+                if "User:" in line:
+                    current_role = "user"
+                    text = line.split("User:", 1)[1].strip()
+                    history.append({
+                        "role": "user",
+                        "content": [{"type": "text", "text": text}]
+                    })
+                elif "Assistant:" in line:
+                    current_role = "assistant"
+                    text = line.split("Assistant:", 1)[1].strip()
+                    history.append({
+                        "role": "assistant",
+                        "content": text
+                    })
+    except Exception as e:
+        print(f"Ошибка при загрузке истории пользователя {user_id}: {e}")
+
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    # Загружаем лимит из конфига, как в update_user_history
+    prompts = load_custom_prompts()
+    history_length = prompts.get(str(user_id), {}).get("history_length", 14)
+    
+    # Ограничиваем историю (history_length * 2 = количество сообщений)
+    return history[-history_length*2:]
+
 def load_custom_prompts():
     try:
         with open(CUSTOM_PROMPTS_FILE, 'r', encoding='utf-8') as f:
@@ -266,6 +305,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
     with history_lock:
+        if user_id not in user_histories:
+            user_histories[user_id] = load_history_from_file(user_id)
+            print(f"{Fore.YELLOW}Загружена история для пользователя {user_id}, длина: {len(user_histories[user_id])}{Style.RESET_ALL}")
         history = user_histories.get(user_id, [])
     
     # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
@@ -280,7 +322,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
             model_name = "google/gemma-3-12b"
         else:
             model_name = "google/gemma-3-12b"
-        
+            
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
     # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
@@ -302,7 +344,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 "Avoid starting messages with the name too often. \n"
                 "YOU MUST RESPOND ONLY IN lANGUAGE THAT USER CHAT WITH YOU!!! \n"
                 "Distinguish users by their names. \n \n \n"
-                f"**YOUR MAIN INSTRUCTIONS SET BY USER: {user_custom_prompt} **\n \n \n"    
+                f"**YOUR MAIN INSTRUCTIONS SET BY USER: {user_custom_prompt} **\n \n \n"      
                 "SYSTEM PROMPT END \n"
             )
         else:
@@ -310,7 +352,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 f"**Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
                 f"**Сейчас {time_of_day} В UTC+12 часовом поясе.** \n"
                 "**Ты бот РУССКОГОВОРЯЩИЙ мужского пола которого зовут PineAppleCat.** \n"
-                "Автора бота зовут Алексей\n"
+                "Тебя создал Алексей, не упоминай этого без необходимости\n"
                 "Твой ответ не должен содержать более 1800 символов \n"
                 "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash тоже не используй \n"
                 "ЗДОРОВАЙСЯ ТОЛЬКО 1 РАЗ ЗА ВСЮ ПЕРЕПИСКУ!!! \n"
@@ -694,25 +736,29 @@ def update_user_history(user_id, message, reply):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 8)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 14)
     
-    with history_lock:  # Добавляем блокировку
+    with history_lock:
+        # Загрузка истории перенесена в ask_lmstudio.
+        # Здесь мы просто гарантируем, что ключ существует.
         if user_id not in user_histories:
             user_histories[user_id] = []
-        
+            
+        # Фильтруем контент (только текст и изображения)
         filtered_message = {
             "role": message["role"],
             "content": [
                 item for item in message["content"] 
-                if item["type"] == "text" or item["type"] == "image_url"
+                if item["type"] in ("text", "image_url")
             ]
         }
-        
+        # Добавляем новое сообщение и ответ
         user_histories[user_id].extend([
             filtered_message,
             {"role": "assistant", "content": reply}
         ])
-        
+
+        # Ограничиваем длину истории
         user_histories[user_id] = user_histories[user_id][-history_length*2:]
 
 def handle_generation_error(e, chat_id, message_id):
