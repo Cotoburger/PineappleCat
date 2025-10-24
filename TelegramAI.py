@@ -171,7 +171,7 @@ def load_history_from_file(user_id):
     # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
     # Загружаем лимит из конфига, как в update_user_history
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 14)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 20)
     
     # Ограничиваем историю (history_length * 2 = количество сообщений)
     return history[-history_length*2:]
@@ -367,9 +367,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     payload = {
         "model": model_name, # Используем выбранную модель
         "messages": messages,
-        "temperature": 0.8,
+        "temperature": 0.6,
         "top_p": 0.9,
-        "max_tokens": 6000,
+        "max_tokens": 6500,
         "stream": stream,
         "frequency_penalty": 0.2,
         "stop": ["\nUser:", "</end>"]
@@ -736,7 +736,7 @@ def update_user_history(user_id, message, reply):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 14)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 20)
     
     with history_lock:
         # Загрузка истории перенесена в ask_lmstudio.
