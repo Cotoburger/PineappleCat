@@ -1,11 +1,13 @@
 import traceback
 
 import telebot
+import whisper
 import json
 import requests
 import threading
 from threading import Lock
 import time
+import tempfile
 import re
 import base64
 import os
@@ -20,6 +22,9 @@ from colorama import Fore, Style, init
 from dotenv import load_dotenv
 from FitnessAI import process_food_image
 import sqlite3
+from io import BytesIO
+from pydub import AudioSegment
+import speech_recognition as sr
 
 load_dotenv()
 init()
@@ -526,6 +531,40 @@ def handle_message_group(message):
         user_timers[user_id] = timer
         timer.start()
 
+# Загружаем модель один раз (экономия времени)
+whisper_model = whisper.load_model("medium")  # можно tiny, base, small, medium, large
+
+def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
+    """
+    Транскрибирует аудио через локальный Whisper.
+    Работает с .ogg, .opus, .mp3, .wav.
+    """
+    tmp_path = None
+    try:
+        # Конвертируем аудио в WAV через pydub
+        sound = AudioSegment.from_file(BytesIO(audio_bytes))
+
+        # Создаём временный файл без открытия
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_path = tmp_file.name
+        tmp_file.close()  # Закрываем, чтобы pydub мог записать
+
+        # Экспортируем аудио в WAV
+        sound.export(tmp_path, format="wav")
+
+        # Whisper принимает путь к файлу
+        result = whisper_model.transcribe(tmp_path, language="ru", task="transcribe")
+        text = result.get("text", "").strip()
+        return text if text else "(пустая речь)"
+
+    except Exception as e:
+        print(f"Whisper transcription error: {e}")
+        return f"(Ошибка при обработке аудио: {e})"
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)  # Удаляем временный файл
+
+# --- Обработка голосовых сообщений и аудио ---
 def process_buffered_messages(user_id):
     with buffer_lock:
         if user_id not in user_buffers:
@@ -533,54 +572,99 @@ def process_buffered_messages(user_id):
         messages = user_buffers.pop(user_id, [])
         if user_id in user_timers:
             del user_timers[user_id]
-    
+
     if not messages:
         return
 
     combined_content = []
     user_name = messages[0].from_user.first_name
     chat_id = messages[0].chat.id
-    
+
     url_pattern = re.compile(r'(https?://[^\s]+)')
-    
     clean_text_for_print = ""
 
     for msg in messages:
         forward_info = ""
-        clean_text = ""
-        if msg.forward_from:
+        if getattr(msg, "forward_from", None):
             forward_info = f" ↪️ От: {msg.forward_from.first_name}"
-        elif msg.forward_from_chat:
+        elif getattr(msg, "forward_from_chat", None):
             forward_info = f" ↪️ Из: {msg.forward_from_chat.title}"
 
-        if msg.photo:
-            photo = msg.photo[-1]
-            file_info = bot.get_file(photo.file_id)
-            file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-            image_data = requests.get(file_url).content
-            base64_image = base64.b64encode(image_data).decode('utf-8')
-            caption = (msg.caption or "Изображение") + forward_info
-            clean_text_for_print += f"[Изображение] {caption} "
-            combined_content.extend([
-                {"type": "text", "text": f"({user_name} в ({get_current_time()})): {caption}"},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-            ])
-        elif msg.text:
-            clean_text = (msg.text.strip() + forward_info) if msg.text.strip() else ""
-            if clean_text:
-                urls = url_pattern.findall(clean_text)
-                url_content = ""
-                if urls:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        url_content = loop.run_until_complete(fetch_url_content(urls[0]))
-                    finally:
-                        loop.close()
-                    clean_text += f"\n\nСодержимое ссылки:\n{url_content}"
-                
-                clean_text_for_print += f"{clean_text} "
+        try:
+            # --- Голосовое сообщение (voice) ---
+            if getattr(msg, "voice", None):
+                file_id = msg.voice.file_id
+                file_info = bot.get_file(file_id)
+                file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
+                r = requests.get(file_url)
+                if r.status_code != 200:
+                    raise Exception(f"Ошибка загрузки файла: {r.status_code}")
+                voice_data = r.content
+
+                # Принудительно указываем формат opus
+                transcribed_text = transcribe_audio(voice_data)
+                clean_text = (transcribed_text + forward_info) if transcribed_text else "(пустое голосовое сообщение)" + forward_info
+
+                clean_text_for_print += f"[Голосовое сообщение]-> {clean_text} "
                 combined_content.append({"type": "text", "text": f"({user_name} в ({get_current_time()})): {clean_text}"})
+
+            # --- Аудио / Документы с аудио MIME ---
+            elif getattr(msg, "audio", None) or (getattr(msg, "document", None) and getattr(msg.document, "mime_type", "").startswith("audio")):
+                file_obj = getattr(msg, "audio", None) or msg.document
+                file_id = file_obj.file_id
+                file_info = bot.get_file(file_id)
+                file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
+                r = requests.get(file_url)
+                if r.status_code != 200:
+                    raise Exception(f"Ошибка загрузки аудио: {r.status_code}")
+                audio_data = r.content
+
+                # Определяем формат для pydub через MIME
+                fmt = None
+                if hasattr(file_obj, "mime_type"):
+                    fmt = file_obj.mime_type.split("/")[-1]  # 'ogg', 'mp3', 'wav' и т.д.
+
+                transcribed_text = transcribe_audio(audio_data, lang="ru-RU")
+                clean_text = (transcribed_text + forward_info) if transcribed_text else "(пустой аудиофайл)" + forward_info
+
+                clean_text_for_print += f"[Аудиофайл]-> {clean_text} "
+                combined_content.append({"type": "text", "text": f"({user_name} в ({get_current_time()})): {clean_text}"})
+
+            # --- Текстовые сообщения ---
+            elif getattr(msg, "text", None):
+                clean_text = (msg.text.strip() + forward_info) if msg.text.strip() else ""
+                if clean_text:
+                    urls = url_pattern.findall(clean_text)
+                    url_content = ""
+                    if urls:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            url_content = loop.run_until_complete(fetch_url_content(urls[0]))
+                        finally:
+                            loop.close()
+                        clean_text += f"\n\nСодержимое ссылки:\n{url_content}"
+
+                    clean_text_for_print += f"{clean_text} "
+                    combined_content.append({"type": "text", "text": f"({user_name} в ({get_current_time()})): {clean_text}"})
+
+            # --- Фото ---
+            elif getattr(msg, "photo", None):
+                photo = msg.photo[-1]
+                file_info = bot.get_file(photo.file_id)
+                file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
+                image_data = requests.get(file_url).content
+                base64_image = base64.b64encode(image_data).decode('utf-8')
+                caption = (msg.caption or "Изображение") + forward_info
+                clean_text_for_print += f"[Изображение] {caption} "
+                combined_content.extend([
+                    {"type": "text", "text": f"({user_name} в ({get_current_time()})): {caption}"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                ])
+
+        except Exception as e:
+            print(f"Ошибка обработки сообщения: {e}")
+            combined_content.append({"type": "text", "text": f"({user_name} в ({get_current_time()})): (Ошибка при обработке сообщения: {e})"})
 
     if not combined_content:
         return
@@ -589,7 +673,6 @@ def process_buffered_messages(user_id):
     print(f"{Fore.CYAN}Telegram: {Style.RESET_ALL} ({user_name}) {clean_text_for_print.strip()}")
 
     sent_message = pre_send(chat_id)
-
     reply_generator = ask_lmstudio(user_id, message_content)
     send_generated_text(reply_generator, chat_id, user_id, message_content, sent_message)
 
@@ -773,8 +856,9 @@ def handle_generation_error(e, chat_id, message_id):
     except Exception as edit_error:
         print("Ошибка отправки ошибки:", edit_error)
 
-bot.message_handler(content_types=['photo'])(handle_message_group)
-bot.message_handler(content_types=['text'])(handle_message_group)
+@bot.message_handler(content_types=['text', 'photo', 'voice', 'audio', 'document'])
+def handle_all_messages(message):
+    handle_message_group(message)
 
 commands = [
     telebot.types.BotCommand("customize", "Позволяет задать кастомный промпт"),
