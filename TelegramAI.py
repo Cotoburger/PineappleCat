@@ -25,6 +25,10 @@ import sqlite3
 from io import BytesIO
 from pydub import AudioSegment
 import speech_recognition as sr
+import gc  # <- обязательно импорт
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="whisper")  # убираем предупреждения
 
 load_dotenv()
 init()
@@ -176,7 +180,7 @@ def load_history_from_file(user_id):
     # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
     # Загружаем лимит из конфига, как в update_user_history
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 20)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 13)
     
     # Ограничиваем историю (history_length * 2 = количество сообщений)
     return history[-history_length*2:]
@@ -354,13 +358,11 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
             )
         else:
             prompt = (
-                f"**Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
-                f"**Сейчас {time_of_day} В UTC+12 часовом поясе.** \n"
-                "**Ты бот РУССКОГОВОРЯЩИЙ мужского пола которого зовут PineAppleCat.** \n"
+                f"Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
+                f"Сейчас {time_of_day} В UTC+12 часовом поясе. \n"
+                "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
                 "Тебя создал Алексей, не упоминай этого без необходимости\n"
-                "Твой ответ не должен содержать более 1800 символов \n"
-                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash тоже не используй \n"
-                "ЗДОРОВАЙСЯ ТОЛЬКО 1 РАЗ ЗА ВСЮ ПЕРЕПИСКУ!!! \n"
+                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
                 "ВЕДИ СЕБЯ КАК РЕАЛЬНЫЙ ЧЕЛОВЕК И ОБЩАЙСЯ ПРЕИМУЩЕСТВЕННО НЕФОРМАЛЬНО НО В МЕРУ. \n"
                 "SYSTEM PROMPT END \n"
             )
@@ -531,8 +533,8 @@ def handle_message_group(message):
         user_timers[user_id] = timer
         timer.start()
 
-# Загружаем модель один раз (экономия времени)
-whisper_model = whisper.load_model("medium")  # можно tiny, base, small, medium, large
+# Загружаем модель один раз
+whisper_model = whisper.load_model("medium", device="cpu")  # CPU явно
 
 def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
     """
@@ -544,25 +546,29 @@ def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
         # Конвертируем аудио в WAV через pydub
         sound = AudioSegment.from_file(BytesIO(audio_bytes))
 
-        # Создаём временный файл без открытия
-        tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_path = tmp_file.name
-        tmp_file.close()  # Закрываем, чтобы pydub мог записать
+        # Создаём временный WAV-файл
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            sound.export(tmp_path, format="wav")  # Экспортируем в файл
 
-        # Экспортируем аудио в WAV
-        sound.export(tmp_path, format="wav")
-
-        # Whisper принимает путь к файлу
-        result = whisper_model.transcribe(tmp_path, language="ru", task="transcribe")
+        # Транскрибируем
+        result = whisper_model.transcribe(tmp_path, language=lang, task="transcribe")
         text = result.get("text", "").strip()
         return text if text else "(пустая речь)"
 
     except Exception as e:
         print(f"Whisper transcription error: {e}")
         return f"(Ошибка при обработке аудио: {e})"
+
     finally:
+        # Удаляем временный файл
         if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)  # Удаляем временный файл
+            try:
+                os.remove(tmp_path)
+            except Exception as e:
+                print(f"Не удалось удалить временный файл: {e}")
+        # Сборка мусора
+        gc.collect()
 
 # --- Обработка голосовых сообщений и аудио ---
 def process_buffered_messages(user_id):
@@ -819,7 +825,7 @@ def update_user_history(user_id, message, reply):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 20)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 13)
     
     with history_lock:
         # Загрузка истории перенесена в ask_lmstudio.
