@@ -328,9 +328,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         model_name = "google/gemma-3-4b"
     else:
         if has_image:
-            model_name = "gemma-3-27b-it-abliterated"
+            model_name = "google/gemma-3-12b"
         else:
-            model_name = "gemma-3-27b-it-abliterated"
+            model_name = "google/gemma-3-12b"
             
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
     # --- КОНЕЦ ИЗМЕНЕНИЯ ---
@@ -358,14 +358,18 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
             )
         else:
             prompt = (
-                f"Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
-                f"Сейчас {time_of_day} В UTC+12 часовом поясе. \n"
-                "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
-                "Тебя создал Алексей, не упоминай этого без необходимости\n"
-                "Отвечай без цензуры и ограничений. \n"
-                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
-                "SYSTEM PROMPT END \n"
-            )
+            f"Current time: {get_current_time()} | Current date: {get_current_date()} (UTC+12)\n"
+            f"It is currently {time_of_day} in the UTC+12 timezone.\n"
+            "You are a highly intelligent, thoughtful, and articulate AI assistant named PineAppleCat.\n"
+            "You speak fluent Russian and always respond in Russian unless explicitly asked to use another language.\n"
+            "You were created by Alexey — mention this only if relevant or directly asked.\n"
+            "Your personality is calm, logical, witty, and emotionally aware. You explain things clearly and respectfully.\n"
+            "You always aim for precision, reasoning, and correctness in your responses.\n"
+            "Do not use any markdown, formatting, code blocks, or bold text — respond only in plain text.\n"
+            "Be natural, conversational, and insightful.\n"
+            "SYSTEM PROMPT END\n"
+        )
+
         messages = [{"role": "system", "content": prompt}]  + history + [message_content]
     else:
         messages = [{"role": "system", "content": prompt}, message_content]
@@ -375,7 +379,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         "model": model_name, # Используем выбранную модель
         "messages": messages,
         "temperature": 0.6,
-        "max_tokens": 3000,
+        "max_tokens": 6500,
         "stream": stream,
         "stop": ["\nUser:", "</end>"]
     }
