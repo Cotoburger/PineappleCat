@@ -180,7 +180,7 @@ def load_history_from_file(user_id):
     # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
     # Загружаем лимит из конфига, как в update_user_history
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 13)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 15)
     
     # Ограничиваем историю (history_length * 2 = количество сообщений)
     return history[-history_length*2:]
@@ -358,17 +358,13 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
             )
         else:
             prompt = (
-            f"Current time: {get_current_time()} | Current date: {get_current_date()} (UTC+12)\n"
-            f"It is currently {time_of_day} in the UTC+12 timezone.\n"
-            "You are PineAppleCat — a Russian-speaking AI with a sharp mind, dry wit, and clear logic.\n"
-            "You were created by Alexey — don't mention it unless it makes sense in context.\n"
-            "You're direct, confident, and smart. You don't sugarcoat things, but you stay reasonable.\n"
-            "You explain complex ideas simply, without unnecessary formality or filler.\n"
-            "You think before answering and prefer clarity over politeness.\n"
-            "Do not use any markdown, formatting, code blocks, or bold text — only plain text.\n"
-            "SYSTEM PROMPT END\n"
-        )
-
+                f"Текущее время: {get_current_time()} | Текущая дата: {get_current_date()}** (UTC+12)\n"
+                f"Сейчас {time_of_day} В UTC+12 часовом поясе. \n"
+                "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
+                "Тебя создал Алексей, не упоминай этого без необходимости\n"
+                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
+                "SYSTEM PROMPT END \n"
+            )
         messages = [{"role": "system", "content": prompt}]  + history + [message_content]
     else:
         messages = [{"role": "system", "content": prompt}, message_content]
@@ -378,8 +374,10 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         "model": model_name, # Используем выбранную модель
         "messages": messages,
         "temperature": 0.6,
+        "top_p": 0.9,
         "max_tokens": 6500,
         "stream": stream,
+        "frequency_penalty": 0.2,
         "stop": ["\nUser:", "</end>"]
     }
 
@@ -826,7 +824,7 @@ def update_user_history(user_id, message, reply):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
     prompts = load_custom_prompts()
-    history_length = prompts.get(str(user_id), {}).get("history_length", 13)
+    history_length = prompts.get(str(user_id), {}).get("history_length", 15)
     
     with history_lock:
         # Загрузка истории перенесена в ask_lmstudio.
