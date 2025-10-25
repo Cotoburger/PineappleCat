@@ -363,7 +363,6 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
                 "Тебя создал Алексей, не упоминай этого без необходимости\n"
                 "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
-                "ВЕДИ СЕБЯ КАК РЕАЛЬНЫЙ ЧЕЛОВЕК И ОБЩАЙСЯ ПРЕИМУЩЕСТВЕННО НЕФОРМАЛЬНО НО В МЕРУ. \n"
                 "SYSTEM PROMPT END \n"
             )
         messages = [{"role": "system", "content": prompt}]  + history + [message_content]
