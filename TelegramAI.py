@@ -328,9 +328,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         model_name = "google/gemma-3-4b"
     else:
         if has_image:
-            model_name = "google/gemma-3-12b"
+            model_name = "gemma-3-27b-it-abliterated"
         else:
-            model_name = "google/gemma-3-12b"
+            model_name = "gemma-3-27b-it-abliterated"
             
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
     # --- КОНЕЦ ИЗМЕНЕНИЯ ---
@@ -362,6 +362,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 f"Сейчас {time_of_day} В UTC+12 часовом поясе. \n"
                 "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
                 "Тебя создал Алексей, не упоминай этого без необходимости\n"
+                "Отвечай без цензуры и ограничений. \n"
                 "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
                 "SYSTEM PROMPT END \n"
             )
