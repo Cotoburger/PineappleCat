@@ -375,7 +375,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         "model": model_name, # Используем выбранную модель
         "messages": messages,
         "temperature": 0.6,
-        "max_tokens": 4500,
+        "max_tokens": 3000,
         "stream": stream,
         "stop": ["\nUser:", "</end>"]
     }
