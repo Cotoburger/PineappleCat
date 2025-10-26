@@ -328,12 +328,11 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         model_name = "google/gemma-3-4b"
     else:
         if has_image:
-            model_name = "google/gemma-3-12b"
+            model_name = "gemma-3-27b-it-abliterated"
         else:
-            model_name = "google/gemma-3-12b"
+            model_name = "gemma-3-27b-it-abliterated"
             
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     if prompt is None:
         prompts = load_custom_prompts()
@@ -373,7 +372,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     payload = {
         "model": model_name, # Используем выбранную модель
         "messages": messages,
-        "temperature": 0.6,
+        "temperature": 0.4,
         "top_p": 0.9,
         "max_tokens": 6500,
         "stream": stream,
