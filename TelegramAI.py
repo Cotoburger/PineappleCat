@@ -193,7 +193,8 @@ def load_custom_prompts():
         return {}
 
 def escape_markdown_v2(text: str) -> str:
-    return text
+    escape_chars = '_*[]()~`>#+-=|{}.!'
+    return ''.join('\\' + char if char in escape_chars else char for char in text)
 
 def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
