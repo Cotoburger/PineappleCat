@@ -117,7 +117,7 @@ def process_food(message):
     user = cursor.fetchone()
     if user is None:
         user_states[str(message.from_user.id)] = "food_registration"
-        bot.reply_to(message, escape_markdown_v2("Для использования этой функции нам необходимо знать: ваш текущий вес и рост, а также желаемый вес. Отправьте нам эти данные в следующем формате:\n`ВАШ_ВЕС ВАШ_РОСТ ЖЕЛАЕМЫЙ_ВЕС`\nИли сами задайте суточный лимит, отправив число калорий."), parse_mode="MarkdownV2")
+        bot.reply_to(message, "Для использования этой функции нам необходимо знать: ваш текущий вес и рост, а также желаемый вес. Отправьте нам эти данные в следующем формате:\nВАШ_ВЕС ВАШ_РОСТ ЖЕЛАЕМЫЙ_ВЕС\nИли сами задайте суточный лимит, отправив число калорий.")
         return
     user_states[str(message.from_user.id)] = "food"
     bot.reply_to(message, "Отправьте фотографию еды")
@@ -130,9 +130,7 @@ def food_edit(message):
         user_states[str(message.from_user.id)] = "food_registration"
     else:
         user_states[str(message.from_user.id)] = "food_edit"
-    bot.reply_to(message, escape_markdown_v2(
-        "Отправьте нам ваш вес, рост и желаемый вес в следующем формате:\n`ВАШ_ВЕС ВАШ_РОСТ ЖЕЛАЕМЫЙ_ВЕС`\nИли сами задайте суточный лимит, отправив число калорий."),
-                 parse_mode="MarkdownV2")
+    bot.reply_to(message, "Отправьте нам ваш вес, рост и желаемый вес в следующем формате:\nВАШ_ВЕС ВАШ_РОСТ ЖЕЛАЕМЫЙ_ВЕС\nИли сами задайте суточный лимит, отправив число калорий.")
 
 def save_history_to_file(user_id, user_message, assistant_reply):
     history_file = os.path.join(HISTORY_DIR, f"{user_id}.txt")
@@ -191,10 +189,6 @@ def load_custom_prompts():
             return json.load(f)
     except FileNotFoundError:
         return {}
-
-def escape_markdown_v2(text: str) -> str:
-    escape_chars = '_*[]()~`>#+-=|{}.!'
-    return ''.join('\\' + char if char in escape_chars else char for char in text)
 
 def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
@@ -311,6 +305,12 @@ async def fetch_url_content(url):
         print(f"Парсинг: {error_message}")
         return error_message
 
+def escape_md_v2(text):
+    escape_chars = ['(', ')', '.', '!', '-']
+    for char in escape_chars:
+        text = text.replace(char, '\\' + char)
+    return text
+
 def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
     
@@ -362,7 +362,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 f"Сейчас {time_of_day} В UTC+12 часовом поясе. \n"
                 "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
                 "Тебя создал Алексей, не упоминай этого без необходимости\n"
-                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВОООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
+                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
                 "SYSTEM PROMPT END \n"
             )
         messages = [{"role": "system", "content": prompt}]  + history + [message_content]
@@ -744,10 +744,12 @@ def send_generated_text(reply_generator, chat_id, user_id, message_content, sent
                         if len(trimmed_reply) - len(last_sent_text) < 3 and not force_condition:
                             continue
 
+                        trimmed_reply_escaped = escape_md_v2(trimmed_reply)
                         bot.edit_message_text(
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
-                            text=escape_markdown_v2(trimmed_reply)
+                            text=trimmed_reply_escaped,
+                            parse_mode='MarkdownV2'
                         )
                         last_sent_text = trimmed_reply
                         text_buffer = text_buffer[len(trimmed_reply):]
@@ -755,6 +757,19 @@ def send_generated_text(reply_generator, chat_id, user_id, message_content, sent
                         break
                     except ApiTelegramException as e:
                         if "message is not modified" in str(e):
+                            break
+                        elif "can't parse entities" in str(e).lower():
+                            # Игнорируем ошибку парсинга, НЕ выводим в консоль
+                            # print(f"Ошибка парсинга MarkdownV2 в промежуточном обновлении: {e}") # Закомментировано
+                            # print(f"Текст: {trimmed_reply}") # Закомментировано
+                            bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=sent_message.message_id,
+                                text=trimmed_reply
+                            )
+                            last_sent_text = trimmed_reply
+                            text_buffer = text_buffer[len(trimmed_reply):]
+                            last_update_time = current_time
                             break
                         elif handle_429_error(e, edit_attempt, max_retries, retry_delay):
                             continue
@@ -766,19 +781,21 @@ def send_generated_text(reply_generator, chat_id, user_id, message_content, sent
         if final_text and final_text != last_sent_text:
             for edit_attempt in range(max_retries):
                 try:
-                    escaped_final_text = escape_markdown_v2(final_text)
+                    final_text_escaped = escape_md_v2(final_text)
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=sent_message.message_id,
-                        text=escaped_final_text
+                        text=final_text_escaped,
+                        parse_mode='MarkdownV2'
                     )
                     break
                 except ApiTelegramException as e:
                     if "message is not modified" in str(e):
                         break
                     elif "can't parse entities" in str(e).lower():
-                        print(f"Ошибка парсинга MarkdownV2: {e}")
-                        print(f"Финальный текст: {final_text}")
+                        # Игнорируем ошибку парсинга, НЕ выводим в консоль
+                        # print(f"Ошибка парсинга MarkdownV2: {e}") # Закомментировано
+                        # print(f"Финальный текст: {final_text}") # Закомментировано
                         bot.edit_message_text(
                             chat_id=chat_id,
                             message_id=sent_message.message_id,
@@ -864,6 +881,7 @@ def handle_generation_error(e, chat_id, message_id):
 @bot.message_handler(content_types=['text', 'photo', 'voice', 'audio', 'document'])
 def handle_all_messages(message):
     handle_message_group(message)
+
 
 commands = [
     telebot.types.BotCommand("customize", "Позволяет задать кастомный промпт"),
