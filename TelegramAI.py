@@ -1,6 +1,6 @@
 import asyncio
 import base64
-import gc  # <- обязательно импорт
+import gc
 import json
 import os
 import random

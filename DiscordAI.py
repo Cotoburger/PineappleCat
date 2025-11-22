@@ -13,25 +13,23 @@ from bs4 import BeautifulSoup
 import random
 import base64
 from colorama import Fore, Style, init
-from earthquake_monitor import check_earthquakes  # добавим импорт
+from earthquake_monitor import check_earthquakes
 from dotenv import load_dotenv
 import os
 from discord.ext import tasks
 
-load_dotenv()  # Загружает .env в переменные окружения
+load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-init() # Инициализация colorama (обязательно для Windows)
+init()
 
-# Создаем очередь на 4 сообщения
 message_queue = asyncio.Queue(maxsize=4)
 
 MEDIA = 1341736506804539393
 MEDIATIME = 4700
 
 def get_current_time():
-    # Создаем timezone-aware объект с фиксированным смещением UTC+12
     utc12_offset = timezone(timedelta(hours=12))
     utc12_time = datetime.now(timezone.utc).astimezone(utc12_offset)
     return utc12_time.strftime("%H:%M:%S")
@@ -51,7 +49,6 @@ bot = commands.Bot(command_prefix='!', intents=intents, self_bot=False)
 LM_STUDIO_URL = "http://127.0.0.1:1783/v1/chat/completions"
 
 
-# Текущая модель по умолчанию
 current_model = "google/gemma-3-12b"
 
 
@@ -106,7 +103,6 @@ async def customize(
     prompts = load_custom_prompts()
     user_id_str = str(interaction.user.id)
 
-    # Если запрос на сброс
     if reset:
         if user_id_str in prompts:
             del prompts[user_id_str]
@@ -117,14 +113,12 @@ async def customize(
             await interaction.response.send_message("У вас нет кастомных настроек для сброса.", ephemeral=True)
         return
 
-    # Миграция со строки в словарь
     if isinstance(prompts.get(user_id_str), str):
         prompts[user_id_str] = {
             "prompt": prompts[user_id_str],
             "history_length": 8
         }
 
-    # Если ничего не передано — показываем текущие настройки
     if prompt is None and history_length is None:
         current_prompt = prompts.get(user_id_str, {}).get("prompt")
         current_length = prompts.get(user_id_str, {}).get("history_length", 8)
@@ -134,11 +128,9 @@ async def customize(
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Инициализируем словарь, если пусто
     if user_id_str not in prompts:
         prompts[user_id_str] = {}
 
-    # Обновляем промпт
     if prompt:
         if len(prompt) > 500:
             await interaction.response.send_message("Промпт должен быть не длиннее 500 символов.", ephemeral=True)
@@ -146,7 +138,6 @@ async def customize(
         prompts[user_id_str]["prompt"] = prompt
         print(f"Пользователь {interaction.user.name} установил кастомный промпт: {prompt}")
 
-    # Обновляем длину истории
     if history_length is not None:
         if not (1 <= history_length <= 15):
             await interaction.response.send_message("Длина истории должна быть от 1 до 15.", ephemeral=True)
@@ -185,13 +176,11 @@ def get_time_of_day():
 time_of_day = get_time_of_day()
 prompt = ""
 
-# Настройки
 HISTORY_FILE = "media_history.json"
 HISTORY_LIMIT = 3
 MEDIA = 1341736506804539393
-MEDIATIME = 10600  # интервал в секундах
+MEDIATIME = 10600
 
-# Функции работы с историей
 def load_history():
     if not os.path.exists(HISTORY_FILE):
         return []
@@ -206,7 +195,6 @@ def save_history(messages):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
-# Получение времени суток
 def get_time_of_day():
     now = datetime.now().hour
     if 5 <= now < 12:
@@ -218,12 +206,10 @@ def get_time_of_day():
     else:
         return "ночь"
 
-# Генерация текста
 async def generate_hourly_report(prompt):
     time_of_day = get_time_of_day()
     previous_messages = load_history()
 
-    # История как отдельный user-message
     formatted_history = ""
     for msg in previous_messages:
         formatted_history += f"{msg['content']}\n"
@@ -243,18 +229,14 @@ async def generate_hourly_report(prompt):
 ]
 
 
-    # Добавляем историю, если есть
     if formatted_history.strip():
         conversation.append({"role": "user", "content": formatted_history.strip()})
 
-    # Добавляем сам промпт (например, последние сообщения из канала)
     conversation.append({"role": "user", "content": prompt})
 
-    # Стриминг с LM Studio
     async for chunk in query_lm_studio(conversation):
         yield chunk
 
-# Получение последних 5 сообщений из Discord
 async def get_last_5_messages(channel):
     messages = [msg async for msg in channel.history(limit=5)]
     messages.reverse()
@@ -270,7 +252,6 @@ async def hourly_task():
         print("❌ Не удалось найти канал с данным ID")
         return
 
-    # === Таймер для землетрясений ===
     now = time.time()
     if not hasattr(hourly_task, "last_quake_check"):
         hourly_task.last_quake_check = 0
@@ -282,7 +263,6 @@ async def hourly_task():
             print(f"⚠️ Ошибка в check_earthquakes: {e}")
         hourly_task.last_quake_check = now
 
-    # === Получение последних сообщений ===
     try:
         last_messages = await get_last_5_messages(channel)
     except Exception as e:
@@ -296,7 +276,6 @@ async def hourly_task():
         for msg in last_messages:
             prompt += f"{msg.author.display_name}: {msg.content}\n"
 
-    # === Проверка времени последнего сообщения ===
     last_message_time = last_messages[-1].created_at if last_messages else None
     if not last_message_time or (datetime.now(timezone.utc) - last_message_time).total_seconds() > MEDIATIME:
         try:
@@ -313,7 +292,6 @@ async def hourly_task():
         edit_cooldown = 1.5
         last_edit_time = 0
 
-        # === Постепенная генерация поста ===
         try:
             async for chunk in generate_hourly_report(prompt):
                 token_buffer += chunk
@@ -341,7 +319,6 @@ async def hourly_task():
             print(f"⚠️ Ошибка в генерации отчёта: {e}")
             return
 
-        # === Финальная сборка ===
         accumulated_text += token_buffer
         lines = accumulated_text.split("\n")
         formatted_text = "\n".join(
@@ -396,7 +373,7 @@ async def fetch_url_content(url):
             
             async with session.get(
                 url,
-                allow_redirects=True,  # Разрешаем редиректы
+                allow_redirects=True,
                 raise_for_status=False
             ) as response:
                 
@@ -461,7 +438,7 @@ async def fetch_url_content(url):
 
 async def fetch_weather():
     weather_api_key = os.getenv("WEATHER_API_KEY")
-    city = "Petropavlovsk-Kamchatsky, RU"  # Или замените на любой город
+    city = "Petropavlovsk-Kamchatsky, RU"
     url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&cnt=10&appid={weather_api_key}&units=metric&lang=ru"
     
     async with aiohttp.ClientSession() as session:
@@ -469,16 +446,15 @@ async def fetch_weather():
             data = await response.json()
             if response.status == 200:
                 weather_info = []
-                current_time = datetime.now()  # Текущее время
+                current_time = datetime.now()
                 for entry in data['list']:
                     time = datetime.utcfromtimestamp(entry['dt'])
-                    if time > current_time:  # Проверяем, что время прогноза в будущем
-                        formatted_time = time.strftime('%d-%m %H:%M')  # Форматируем дату как ДД-ММ ЧЧ:ММ
-                        temp = round(entry['main']['temp'])  # Округляем температуру
-                        humidity = entry['main']['humidity']  # Извлекаем влажность
-                        description = entry['weather'][0]['description'].lower()  # Приводим к нижнему регистру
+                    if time > current_time:
+                        formatted_time = time.strftime('%d-%m %H:%M')
+                        temp = round(entry['main']['temp'])
+                        humidity = entry['main']['humidity']
+                        description = entry['weather'][0]['description'].lower()
                         
-                        # Добавляем эмодзи в зависимости от русских описаний погоды
                         if "ясно" in description:
                             emoji = "☀️"  # Ясно
                         elif "облачно" in description or "пасмурно" in description or "переменная облачность" in description:
@@ -494,7 +470,7 @@ async def fetch_weather():
                         elif "ветер" in description or "шторм" in description:
                             emoji = "💨"  # Ветер или шторм
                         else:
-                            emoji = "🌥️"  # Другие условия
+                            emoji = "🌥️"  # Другое
 
                         weather_info.append(f"{formatted_time}: {temp}°C, влажность: {humidity}%, {description} {emoji}")
                 
@@ -506,7 +482,6 @@ async def fetch_weather():
             else:
                 return "Не удалось получить данные о погоде."
 
-# Список ключевых слов
 weather_keywords = [
     "погоду", "погода", "temperature", "weather", "прогноз", "солнце", "дождь", 
     "снег", "завтра", "пасмурно", "погоды", "погоде", "погоду", "погодой",
@@ -526,16 +501,13 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # Укажите ID канала, на который бот должен отвечать на все сообщения
-    target_channel_id = MEDIA  # Замените на нужный ID канала
+    target_channel_id = MEDIA
 
-    # Проверка, если сообщение пришло из указанного канала
     if message.channel.id == target_channel_id:
         await handle_message(message)
         await bot.process_commands(message)
         return
 
-    # Бот отвечает на сообщения только если он упомянут или это ответ на его сообщение
     bot_mentioned = bot.user in message.mentions if not isinstance(message.channel, discord.DMChannel) else True
     is_reply_to_bot = message.reference and message.reference.resolved and message.reference.resolved.author == bot.user
 
@@ -544,26 +516,17 @@ async def on_message(message):
 
     await handle_message(message)
 
-# Список ключевых слов
-weather_keywords = [
-    "погоду", "погода", "temperature", "weather", "прогноз", "солнце", "дождь", 
-    "снег", "завтра", "пасмурно", "погоды", "погоде", "погоду", "погодой",
-]
 
-# База ключевых слов с текстами, которые передаются в промпт
 keyword_database = {
     ("Даша", "Таран", "Dasha", "Taran"): " Даша Таран — российская модель и блогер, родилась 12 октября 1999 года в России. Она приобрела известность благодаря своему контенту в Instagram и TikTok, где публикует фотографии и видео на темы моды, красоты и образа жизни. Даша привлекает внимание своей яркой внешностью и аутентичным стилем, а также часто сотрудничает с различными брендами. Её искренняя и доступная личность сделала её любимицей среди поклонников и подписчиков. В детстве Даша была активной девочкой, занималась танцами и спортом, что помогло ей развить уверенность в себе. Её родные поддерживали её стремления к самовыражению, что способствовало её будущей карьере в моделинге и социальных сетях. [Фото](https://i.pinimg.com/736x/3c/2f/b7/3c2fb74dc4974f0aa4ee42a999f5b1ec.jpg)",
-    ("Игорь", "Шевцов", "Igor"): "Игорь Шевцов —  жирный и вонючий и тупой школьник 18 лет",
+    ("Игорь", "Шевцов", "Igor"): "Игорь Шевцов — школьник 18 лет",
 }
 
 
 
-# Допустимые user id
 ALLOWED_USER_IDS = [1107288207785209938, 938138973765791744,]
-# ID гильдии, где находится канал
-GUILD_ID = 1220659200900993106  # Замените на реальный ID гильдии
-# ID канала, куда бот должен отправлять сообщение
-CHANNEL_ID = 1294690106644631713 # Замените на реальный ID канала
+GUILD_ID = 1220659200900993106
+CHANNEL_ID = 1294690106644631713
 
 phrases = [
     "Радуйтесь, люди! Король Олег дома, и град наполнен славой!",
@@ -592,7 +555,6 @@ phrases = [
 async def stream_message(message, conversation):
     print(f"{Fore.YELLOW}Discord:{Style.RESET_ALL} ({message.author.display_name}) {message.content}")
     
-    # Проверка личных сообщений от разрешённых пользователей
     if isinstance(message.channel, discord.DMChannel) and message.author.id in ALLOWED_USER_IDS:
         if message.content.lower() == "я дома":
             print("Отправка сообщения в канал")
@@ -604,10 +566,8 @@ async def stream_message(message, conversation):
                     await channel.send(f"@everyone {phrase}")
                     return
 
-    # Отправка начального сообщения
     response_message = await message.channel.send("-# Thinking...")
     
-    # Переменные для таймаута
     status_changed = asyncio.Event()
     thinking_timeout_task = None
     
@@ -618,22 +578,20 @@ async def stream_message(message, conversation):
     
     thinking_timeout_task = asyncio.create_task(check_thinking_timeout())
     
-    # Инициализация переменных
-    accumulated_text = ""      # Накопленный текст для текущего сообщения
-    token_buffer = ""          # Буфер для текущего чанка
-    min_update_interval = 1.3  # Минимальный интервал обновления (секунды)
-    min_chunk_size = 20        # Минимальный размер текста для обновления (символы)
-    first_final_output = True  # Флаг для первого финального вывода
-    last_update_time = time.time()  # Инициализируем время
+    accumulated_text = ""
+    token_buffer = ""
+    min_update_interval = 1.3
+    min_chunk_size = 20    
+    first_final_output = True 
+    last_update_time = time.time() 
     typing_started = False
-    MAX_LENGTH = 1500         # Максимальная длина одного сообщения
+    MAX_LENGTH = 1500   
     
     thinking_mode = False
     final_output_started = False
     reasoning_buffer = ""
-    current_message = response_message  # Текущее сообщение для редактирования
+    current_message = response_message
 
-    # Обработка вложений (изображений)
     if message.attachments:
         for attachment in message.attachments:
             if any(attachment.filename.lower().endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
@@ -644,7 +602,6 @@ async def stream_message(message, conversation):
                 thinking_timeout_task = asyncio.create_task(check_thinking_timeout())
                 status_changed.clear()
     
-    # Обработка ключевых слов о погоде
     if any(keyword in message.content.lower() for keyword in weather_keywords):
         status_changed.set()
         if thinking_timeout_task:
@@ -658,7 +615,6 @@ async def stream_message(message, conversation):
             "content": f"(use markdown) \nCurrent weather forecast in Петропавловск-Камчатский:\n{weather_info}."
         })
     
-    # Обработка URL в сообщении
     for word in message.content.split():
         if word.startswith("https://"):
             status_changed.set()
@@ -669,8 +625,7 @@ async def stream_message(message, conversation):
             status_changed.clear()
             page_content = await fetch_url_content(word)
             conversation.append({"role": "user", "content": page_content})
-    
-    # Потоковая обработка ответа от языковой модели
+
     async for chunk in query_lm_studio(conversation):
         if not typing_started:
             status_changed.set()
@@ -729,17 +684,15 @@ async def stream_message(message, conversation):
                             status_changed.clear()
                         reasoning_buffer = paragraphs[-1]
         else:
-            accumulated_text += chunk  # Добавляем чанк в накопленный текст
-            token_buffer += chunk     # Добавляем чанк в буфер для проверки
+            accumulated_text += chunk 
+            token_buffer += chunk   
             
             current_time = time.time()
             if (current_time - last_update_time >= min_update_interval) and (len(token_buffer) >= min_chunk_size):
-                # Форматируем только для проверки длины, но отправляем оригинальный текст
                 formatted_length_check = "\n".join(f"-# {line}" if line.strip() else line 
                                                  for line in accumulated_text.split("\n"))
                 
                 if len(formatted_length_check) >= MAX_LENGTH and "\n" in accumulated_text:
-                    # Разбиваем только если есть новый абзац
                     paragraphs = accumulated_text.split("\n")
                     current_length = 0
                     split_point = 0
@@ -747,31 +700,29 @@ async def stream_message(message, conversation):
                     for i, paragraph in enumerate(paragraphs):
                         paragraph_length = len("\n".join(f"-# {line}" if line.strip() else line 
                                                        for line in paragraph.split("\n")))
-                        if i > 0:  # Учитываем двойной перевод строки
+                        if i > 0:
                             paragraph_length += 2
                         if current_length + paragraph_length > MAX_LENGTH:
                             break
                         current_length += paragraph_length
                         split_point = i + 1
                     
-                    if split_point > 0:  # Если нашли точку разбиения
+                    if split_point > 0:
                         text_to_send = "\n".join(paragraphs[:split_point])
                         formatted_to_send = "\n".join(f"-# {line}" if line.strip() else line 
                                                     for line in text_to_send.split("\n"))
-                        # Убираем -# из предыдущего сообщения перед созданием нового
                         cleaned_previous = "\n".join(line.replace("-# ", "") if line.strip() else line 
                                                   for line in text_to_send.split("\n"))
                         await current_message.edit(content=cleaned_previous.strip())
                         accumulated_text = "\n".join(paragraphs[split_point:]).strip()
-                        if accumulated_text:  # Если есть остаток, создаем новое сообщение
+                        if accumulated_text:
                             current_message = await message.channel.send("-# Продолжение...")
                 else:
-                    # Если лимит не превышен или нет нового абзаца, просто обновляем
                     formatted_text = "\n".join(f"-# {line}" if line.strip() else line 
                                              for line in accumulated_text.split("\n"))
                     await current_message.edit(content=formatted_text + " **|** ")
                 
-                token_buffer = ""  # Очищаем буфер
+                token_buffer = ""
                 last_update_time = current_time
                 status_changed.set()
                 if thinking_timeout_task:
@@ -779,11 +730,9 @@ async def stream_message(message, conversation):
                 thinking_timeout_task = asyncio.create_task(check_thinking_timeout())
                 status_changed.clear()
 
-    # Отмена таймаута после завершения
     if thinking_timeout_task:
         thinking_timeout_task.cancel()
     
-    # Финальное обновление сообщения
     if not final_output_started:
         formatted_reasoning = "\n".join(f"-# {line}" if line.strip() else line 
                                         for line in reasoning_buffer.split("\n"))
@@ -794,7 +743,6 @@ async def stream_message(message, conversation):
             formatted_length_check = "\n".join(f"{line}" if line.strip() else line 
                                              for line in current_text.split("\n"))
             if len(formatted_length_check) <= MAX_LENGTH or "\n" not in current_text:
-                # Убираем -# из финального текста
                 cleaned_text = "\n".join(line.replace("-# ", "") if line.strip() else line 
                                        for line in current_text.split("\n"))
                 await current_message.edit(content=cleaned_text.strip())
@@ -818,7 +766,6 @@ async def stream_message(message, conversation):
                     split_point = 1
                 
                 text_to_send = "\n".join(paragraphs[:split_point])
-                # Убираем -# из предыдущего сообщения
                 cleaned_text = "\n".join(line.replace("-# ", "") if line.strip() else line 
                                        for line in text_to_send.split("\n"))
                 await current_message.edit(content=cleaned_text.strip())
@@ -846,7 +793,6 @@ user_data = {
 banned_ids = []
 
 
-# Имя файла, где будут храниться все промпты
 PROMPTS_FILENAME = "custom_prompts.json"
 
 def get_custom_prompt(user_id):
@@ -854,7 +800,7 @@ def get_custom_prompt(user_id):
     user_data = prompts.get(str(user_id))
     if isinstance(user_data, dict):
         return user_data.get("prompt")
-    return user_data  # если осталась старая строка
+    return user_data
 
 def get_custom_history_length(user_id):
     prompts = load_custom_prompts()
@@ -886,9 +832,8 @@ async def handle_message(message):
         await message.channel.send(f"-# Ошибка при получении истории сообщений: {str(e)}")
         return
 
-    # Убираем первое сообщение (самое новое, т.к. история в обратном порядке)
     messages_history.pop(0)
-    messages_history.reverse()  # Переворачиваем список: от старых к новым
+    messages_history.reverse()
 
     clean_message = message.content.replace(f"<@{bot.user.id}>", "").strip()
 
@@ -905,9 +850,7 @@ async def handle_message(message):
         elif attachment.content_type in ('text/plain', 'text/x-python', 'text/html', 'text/css', 'application/javascript'):
             clean_message += "\n" + (await attachment.read()).decode('utf-8')
 
-    # Убираем картинки из истории, если их больше 4
     while len(images) + len(messages_history) > 8:
-        # Удаляем старые картинки
         messages_history.pop(0)
 
     user_info = user_data.get(message.author.id, {})
@@ -915,7 +858,6 @@ async def handle_message(message):
     user_description = user_info.get("description", "")
     user_custom_prompt = get_custom_prompt(message.author.id)
 
-    # Формируем основной prompt
     if message.author.id in banned_ids:
         prompt = (
             f"WARNING: {user_description}. \n"
@@ -958,16 +900,13 @@ async def handle_message(message):
             "SYSTEM PROMPT END \n"
         )
 
-    # История сообщений будет до последнего
     conversation = []
 
     for msg in messages_history:
         role = "assistant" if msg.author == bot.user else "user"
         sender_name = user_data.get(msg.author.id, {}).get("name", msg.author.display_name)
         tag = "" if msg.author == bot.user else f"(previous message from {sender_name}): "
-        cleaned_content = msg.content.replace("-#", "")  # Убираем ""
-
-        # Убираем эмодзи (например, PineappleCat)
+        cleaned_content = msg.content.replace("-#", "")
         cleaned_content = cleaned_content.replace("(PineappleCat:)", "")
         cleaned_content = cleaned_content.replace("<PineappleCat:>", "")
 
@@ -975,10 +914,8 @@ async def handle_message(message):
 
     conversation.append({"role": "system", "content": prompt})
 
-    # Добавляем последнее сообщение
     content = f"({user_name} {get_current_time()}): {clean_message.replace('-#', '')}"
 
-    # Добавляем картинки в ответ
     if images:
         content = [{"type": "text", "text": f"({user_name}): {clean_message.replace('-#', '')}"}] + images
 
