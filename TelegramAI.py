@@ -28,7 +28,7 @@ from telebot.types import User, Chat, Message
 
 from FitnessAI import process_food_image
 
-warnings.filterwarnings("ignore", category=UserWarning, module="whisper")  # убираем предупреждения
+warnings.filterwarnings("ignore", category=UserWarning, module="whisper")
 
 load_dotenv()
 init()
@@ -156,8 +156,34 @@ def save_history_to_file(user_id, user_message, assistant_reply):
     except Exception as e:
         print(f"Ошибка при сохранении истории для пользователя {user_id}: {e}")
 
+BUSINESS_HISTORY_CACHE = {}
+BUSINESS_HISTORY_LIMIT = 20
+
+def update_business_history(user_id, user_message, assistant_reply=None):
+    if user_id not in BUSINESS_HISTORY_CACHE:
+        BUSINESS_HISTORY_CACHE[user_id] = []
+
+    hist = BUSINESS_HISTORY_CACHE[user_id]
+
+    for content in user_message["content"]:
+        if content["type"] == "text":
+            hist.append({
+                "role": "user",
+                "content": [{"type": "text", "text": content["text"]}]
+            })
+
+    if assistant_reply:
+        hist.append({
+            "role": "assistant",
+            "content": assistant_reply
+        })
+
+    if len(hist) > BUSINESS_HISTORY_LIMIT * 2:
+        BUSINESS_HISTORY_CACHE[user_id] = hist[-BUSINESS_HISTORY_LIMIT * 2:]
 
 def load_history_from_file(user_id):
+
+    
     """Загружает историю сообщений пользователя из файла, если она есть."""
     history_file = os.path.join(HISTORY_DIR, f"{user_id}.txt")
     if not os.path.exists(history_file):
@@ -188,12 +214,9 @@ def load_history_from_file(user_id):
     except Exception as e:
         print(f"Ошибка при загрузке истории пользователя {user_id}: {e}")
 
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    # Загружаем лимит из конфига, как в update_user_history
     prompts = load_custom_prompts()
     history_length = prompts.get(str(user_id), {}).get("history_length", 15)
 
-    # Ограничиваем историю (history_length * 2 = количество сообщений)
     return history[-history_length * 2:]
 
 
@@ -335,18 +358,18 @@ def escape_md_v2(text):
 def ask_lmstudio(user_id, message_content, prompt=None, stream=True, business=False):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
 
-    with history_lock:
-        if user_id not in user_histories:
-            user_histories[user_id] = load_history_from_file(user_id)
-            print(
-                f"{Fore.YELLOW}Загружена история для пользователя {user_id}, длина: {len(user_histories[user_id])}{Style.RESET_ALL}")
-        history = user_histories.get(user_id, [])
+    if business:
+        history = BUSINESS_HISTORY_CACHE.get(user_id, [])
+    else:
+        with history_lock:
+            if user_id not in user_histories:
+                user_histories[user_id] = load_history_from_file(user_id)
+                print(
+                    f"{Fore.YELLOW}Загружена история для пользователя {user_id}, длина: {len(user_histories[user_id])}{Style.RESET_ALL}")
+            history = user_histories[user_id]
 
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    # Определяем, есть ли в сообщении изображение
     has_image = any(item.get('type') == 'image_url' for item in message_content.get('content', []))
 
-    # Выбираем модель в зависимости от наличия изображения
     if os.getenv("DEV_FAST") is not None:
         model_name = "google/gemma-3-4b"
     else:
@@ -396,7 +419,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True, business=Fa
 
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model": model_name,  # Используем выбранную модель
+        "model": model_name,
         "messages": messages,
         "temperature": 0.4,
         "top_p": 0.9,
@@ -573,8 +596,7 @@ def handle_message_group(message: Message):
         timer.start()
 
 
-# Загружаем модель один раз
-whisper_model = whisper.load_model("medium", device="cpu")  # CPU явно
+whisper_model = whisper.load_model("medium", device="cpu")
 
 
 def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
@@ -584,15 +606,12 @@ def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
     """
     tmp_path = None
     try:
-        # Конвертируем аудио в WAV через pydub
         sound = AudioSegment.from_file(BytesIO(audio_bytes))
 
-        # Создаём временный WAV-файл
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
             tmp_path = tmp_file.name
-            sound.export(tmp_path, format="wav")  # Экспортируем в файл
+            sound.export(tmp_path, format="wav")
 
-        # Транскрибируем
         result = whisper_model.transcribe(tmp_path, language=lang, task="transcribe")
         text = result.get("text", "").strip()
         return text if text else "(пустая речь)"
@@ -602,13 +621,11 @@ def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
         return f"(Ошибка при обработке аудио: {e})"
 
     finally:
-        # Удаляем временный файл
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
             except Exception as e:
                 print(f"Не удалось удалить временный файл: {e}")
-        # Сборка мусора
         gc.collect()
 
 
@@ -649,7 +666,6 @@ def process_buffered_messages(user_id, business_connection_id: int | None = None
                     raise Exception(f"Ошибка загрузки файла: {r.status_code}")
                 voice_data = r.content
 
-                # Принудительно указываем формат opus
                 transcribed_text = transcribe_audio(voice_data)
                 clean_text = (
                         transcribed_text + forward_info) if transcribed_text else "(пустое голосовое сообщение)" + forward_info
@@ -670,10 +686,9 @@ def process_buffered_messages(user_id, business_connection_id: int | None = None
                     raise Exception(f"Ошибка загрузки аудио: {r.status_code}")
                 audio_data = r.content
 
-                # Определяем формат для pydub через MIME
                 fmt = None
                 if hasattr(file_obj, "mime_type"):
-                    fmt = file_obj.mime_type.split("/")[-1]  # 'ogg', 'mp3', 'wav' и т.д.
+                    fmt = file_obj.mime_type.split("/")[-1]
 
                 transcribed_text = transcribe_audio(audio_data, lang="ru-RU")
                 clean_text = (
@@ -730,7 +745,7 @@ def process_buffered_messages(user_id, business_connection_id: int | None = None
     sent_message = None
     if business_connection_id is None:
         sent_message = pre_send(chat_id)
-    reply_generator = ask_lmstudio(user_id+1, message_content, "Отвечай очень коротко на русском языке от лица Алексея. Используй чо всм типо эм как и другие сокращения" if business_connection_id is not None else None, business=business_connection_id is not None)
+    reply_generator = ask_lmstudio(user_id+1, message_content, "Ты заменяешь Алексея пока он отсутствует. Отвечай от его имени очень жестоко с матами и грубо. и очень коротко пару слов буквально" if business_connection_id is not None else None, business=business_connection_id is not None)
     send_generated_text(reply_generator, chat_id, user_id, message_content, sent_message, business_connection_id)
 
     
@@ -814,9 +829,6 @@ def send_generated_text(reply_generator, chat_id, user_id, message_content, sent
                         if "message is not modified" in str(e):
                             break
                         elif "can't parse entities" in str(e).lower():
-                            # Игнорируем ошибку парсинга, НЕ выводим в консоль
-                            # print(f"Ошибка парсинга MarkdownV2 в промежуточном обновлении: {e}") # Закомментировано
-                            # print(f"Текст: {trimmed_reply}") # Закомментировано
                             if business_connection_id is None:
                                 bot.edit_message_text(
                                     chat_id=chat_id,
@@ -854,9 +866,6 @@ def send_generated_text(reply_generator, chat_id, user_id, message_content, sent
                     if "message is not modified" in str(e):
                         break
                     elif "can't parse entities" in str(e).lower():
-                        # Игнорируем ошибку парсинга, НЕ выводим в консоль
-                        # print(f"Ошибка парсинга MarkdownV2: {e}") # Закомментировано
-                        # print(f"Финальный текст: {final_text}") # Закомментировано
                         if business_connection_id is None:
                             bot.edit_message_text(
                                 chat_id=chat_id,
@@ -907,19 +916,15 @@ def handle_generation_error(e, chat_id, message_id):
 
 
 def update_user_history(user_id, message, reply):
-    # Приводим user_id к int
     user_id = int(user_id) if isinstance(user_id, str) else user_id
 
     prompts = load_custom_prompts()
     history_length = prompts.get(str(user_id), {}).get("history_length", 15)
 
     with history_lock:
-        # Загрузка истории перенесена в ask_lmstudio.
-        # Здесь мы просто гарантируем, что ключ существует.
         if user_id not in user_histories:
             user_histories[user_id] = []
 
-        # Фильтруем контент (только текст и изображения)
         filtered_message = {
             "role": message["role"],
             "content": [
@@ -927,13 +932,11 @@ def update_user_history(user_id, message, reply):
                 if item["type"] in ("text", "image_url")
             ]
         }
-        # Добавляем новое сообщение и ответ
         user_histories[user_id].extend([
             filtered_message,
             {"role": "assistant", "content": reply}
         ])
 
-        # Ограничиваем длину истории
         user_histories[user_id] = user_histories[user_id][-history_length * 2:]
 
 
@@ -962,18 +965,15 @@ commands = [
     telebot.types.BotCommand("food_edit", "изменить суточную цель калорий")
 ]
 
-# Set bot commands
 bot.set_my_commands(commands)
 
 
-# Обработка polling с повторными попытками
 def run_polling():
     max_retries = 15
     retry_delay = 15
     while True:
         try:
-            print("\033[91mЗапуск polling...\033[0m")  # Красный цвет
-            # Polling for new updates with increased timeout
+            print("\033[91mЗапуск polling...\033[0m")
             bot.polling(none_stop=True, interval=0, timeout=50)
         except ApiTelegramException as e:
             if e.error_code == 502:
@@ -997,6 +997,4 @@ def run_polling():
                 print("\033[91mИсчерпаны все попытки. Завершение работы.\033[0m")
                 break
 
-
-# Start polling with retry logic
 run_polling()
