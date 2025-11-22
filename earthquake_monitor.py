@@ -6,15 +6,18 @@ from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
 
-load_dotenv()
+load_dotenv()  # Загрузить переменные из .env файла
 
+# Telegram API
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
 channel_username = os.getenv("TELEGRAM_CHANNEL_USERNAME")
 
+# Discord
 DISCORD_CHANNEL_ID = 1341736506804539393
 MAG_THRESHOLD = 5.0
 
+# Файл для хранения ID последнего обработанного сообщения
 LAST_ID_FILE = "last_telegram_id.json"
 
 def extract_info(message):
@@ -25,6 +28,7 @@ def extract_info(message):
     mag_match = re.search(r"Магнитуда\s*\(Ml\):\s*([0-9.]+)", message)
     intensity_match = re.search(r"Интенсивность в ПК.*:\s*(\d+)", message)
 
+    # Преобразование времени UTC в UTC+12
     if time_match:
         try:
             utc_time_str = time_match.group(1).strip()
@@ -78,7 +82,7 @@ async def check_earthquakes(discord_bot):
 
                 last_id = load_last_message_id()
                 if message_id <= last_id:
-                    return
+                    return  # Уже обработано, пропускаем
 
                 time_str, coords, dist, depth, mag, intensity = extract_info(msg_text)
 
