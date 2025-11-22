@@ -156,6 +156,31 @@ def save_history_to_file(user_id, user_message, assistant_reply):
     except Exception as e:
         print(f"Ошибка при сохранении истории для пользователя {user_id}: {e}")
 
+BUSINESS_HISTORY_CACHE = {}
+BUSINESS_HISTORY_LIMIT = 20
+
+def update_business_history(user_id, user_message, assistant_reply=None):
+    if user_id not in BUSINESS_HISTORY_CACHE:
+        BUSINESS_HISTORY_CACHE[user_id] = []
+
+    hist = BUSINESS_HISTORY_CACHE[user_id]
+
+    for content in user_message["content"]:
+        if content["type"] == "text":
+            hist.append({
+                "role": "user",
+                "content": [{"type": "text", "text": content["text"]}]
+            })
+
+    if assistant_reply:
+        hist.append({
+            "role": "assistant",
+            "content": assistant_reply
+        })
+
+    if len(hist) > BUSINESS_HISTORY_LIMIT * 2:
+        BUSINESS_HISTORY_CACHE[user_id] = hist[-BUSINESS_HISTORY_LIMIT * 2:]
+
 def load_history_from_file(user_id):
 
     
@@ -333,12 +358,15 @@ def escape_md_v2(text):
 def ask_lmstudio(user_id, message_content, prompt=None, stream=True, business=False):
     user_id = int(user_id) if isinstance(user_id, str) else user_id
 
-    with history_lock:
-        if user_id not in user_histories:
-            user_histories[user_id] = load_history_from_file(user_id)
-            print(
-                f"{Fore.YELLOW}Загружена история для пользователя {user_id}, длина: {len(user_histories[user_id])}{Style.RESET_ALL}")
-        history = user_histories.get(user_id, [])
+    if business:
+        history = BUSINESS_HISTORY_CACHE.get(user_id, [])
+    else:
+        with history_lock:
+            if user_id not in user_histories:
+                user_histories[user_id] = load_history_from_file(user_id)
+                print(
+                    f"{Fore.YELLOW}Загружена история для пользователя {user_id}, длина: {len(user_histories[user_id])}{Style.RESET_ALL}")
+            history = user_histories[user_id]
 
     has_image = any(item.get('type') == 'image_url' for item in message_content.get('content', []))
 
@@ -346,9 +374,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True, business=Fa
         model_name = "google/gemma-3-4b"
     else:
         if has_image:
-            model_name = os.getenv("AI_MODEL")
+            model_name = "qwen/qwen3-vl-30b"
         else:
-            model_name = os.getenv("AI_MODEL")
+            model_name = "qwen/qwen3-vl-30b"
 
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
 
