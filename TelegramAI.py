@@ -329,9 +329,9 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
         model_name = "google/gemma-3-4b"
     else:
         if has_image:
-            model_name = "google/gemma-3-12b"
+            model_name = os.getenv("AI_MODEL")
         else:
-            model_name = "google/gemma-3-12b"
+            model_name = os.getenv("AI_MODEL")
             
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
 
