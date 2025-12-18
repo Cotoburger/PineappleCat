@@ -362,7 +362,7 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
                 f"Сейчас {time_of_day} В UTC+12 часовом поясе. \n"
                 "Ты РУССКОГОВОРЯЩИЙ бот мужского пола которого зовут PineAppleCat. \n"
                 "Тебя создал Алексей, не упоминай этого без необходимости\n"
-                "НЕ ИСПОЛЬЗУЙ НИКАКОЕ ФОРМАТИРОВАНИЕ ВООБЩЕ!!! ТОЛЬКО СТАНДАРТНЫЕ СИМВОЛЫ И ТЕКСТ, ```bash и жирный шрифт тоже не используй \n"
+                "НЕ ИСПОЛЬЗУЙ ФОРМАТИРОВАНИЕ MARKDOWN!!! только чистый текст и обычные символы \n"
                 "SYSTEM PROMPT END \n"
             )
         messages = [{"role": "system", "content": prompt}]  + history + [message_content]
@@ -535,7 +535,7 @@ def handle_message_group(message):
 # Загружаем модель один раз
 whisper_model = whisper.load_model("medium", device="cpu")  # CPU явно
 
-def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
+def transcribe_audio(audio_bytes: bytes, lang: str = "auto") -> str:
     """
     Транскрибирует аудио через локальный Whisper.
     Работает с .ogg, .opus, .mp3, .wav.
@@ -629,7 +629,7 @@ def process_buffered_messages(user_id):
                 if hasattr(file_obj, "mime_type"):
                     fmt = file_obj.mime_type.split("/")[-1]  # 'ogg', 'mp3', 'wav' и т.д.
 
-                transcribed_text = transcribe_audio(audio_data, lang="ru-RU")
+                transcribed_text = transcribe_audio(audio_data, lang="ru")  # ← без "-RU"
                 clean_text = (transcribed_text + forward_info) if transcribed_text else "(пустой аудиофайл)" + forward_info
 
                 clean_text_for_print += f"[Аудиофайл]-> {clean_text} "
