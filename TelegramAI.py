@@ -369,7 +369,10 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     else:
         messages = [{"role": "system", "content": prompt}, message_content]
 
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {os.getenv('LM_API_TOKEN')}"
+    }
     payload = {
         "model": model_name, # Используем выбранную модель
         "messages": messages,
