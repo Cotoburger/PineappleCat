@@ -538,7 +538,7 @@ def handle_message_group(message):
 # Загружаем модель один раз
 whisper_model = whisper.load_model("medium", device="cpu")  # CPU явно
 
-def transcribe_audio(audio_bytes: bytes, lang: str = "auto") -> str:
+def transcribe_audio(audio_bytes: bytes, lang: str = "ru") -> str:
     """
     Транскрибирует аудио через локальный Whisper.
     Работает с .ogg, .opus, .mp3, .wav.
@@ -547,21 +547,21 @@ def transcribe_audio(audio_bytes: bytes, lang: str = "auto") -> str:
     try:
         # Конвертируем аудио в WAV через pydub
         sound = AudioSegment.from_file(BytesIO(audio_bytes))
-
+        
         # Создаём временный WAV-файл
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
             tmp_path = tmp_file.name
-            sound.export(tmp_path, format="wav")  # Экспортируем в файл
-
-        # Транскрибируем
+            sound.export(tmp_path, format="wav")
+        
+        # Транскрибируем с русским языком
         result = whisper_model.transcribe(tmp_path, language=lang, task="transcribe")
         text = result.get("text", "").strip()
         return text if text else "(пустая речь)"
-
+        
     except Exception as e:
         print(f"Whisper transcription error: {e}")
         return f"(Ошибка при обработке аудио: {e})"
-
+        
     finally:
         # Удаляем временный файл
         if tmp_path and os.path.exists(tmp_path):
@@ -569,7 +569,6 @@ def transcribe_audio(audio_bytes: bytes, lang: str = "auto") -> str:
                 os.remove(tmp_path)
             except Exception as e:
                 print(f"Не удалось удалить временный файл: {e}")
-        # Сборка мусора
         gc.collect()
 
 # --- Обработка голосовых сообщений и аудио ---

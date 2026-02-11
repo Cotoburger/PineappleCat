@@ -56,7 +56,10 @@ current_model = os.getenv("AI_MODEL")
 
 
 async def query_lm_studio(conversation):
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {os.getenv('LM_API_TOKEN')}"
+        }
     data = {
     "model": current_model,
     "messages": conversation,
