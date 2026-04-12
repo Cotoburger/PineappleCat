@@ -38,6 +38,7 @@ admins_str = os.getenv("ADMINS", "")
 ADMINS = [int(x.strip()) for x in admins_str.split(",") if x.strip().isdigit()]
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 LM_STUDIO_API_URL = 'http://127.0.0.1:1783/v1/chat/completions'
+LM_STUDIO_MODELS_URL = 'http://127.0.0.1:1783/v1/models'
 CUSTOM_PROMPTS_FILE = 'custom_prompts_tg.json'
 db = sqlite3.connect("pineapplecat.db", check_same_thread=False)
 cursor = db.cursor()
@@ -194,6 +195,33 @@ def save_custom_prompts(prompts):
     with open(CUSTOM_PROMPTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(prompts, f, ensure_ascii=False, indent=2)
 
+def ensure_user_prompt_dict(prompts, user_id_str):
+    if user_id_str not in prompts:
+        prompts[user_id_str] = {}
+    elif isinstance(prompts[user_id_str], str):
+        prompts[user_id_str] = {
+            "prompt": prompts[user_id_str]
+        }
+    return prompts[user_id_str]
+
+def get_user_model(user_id):
+    user_id_str = str(user_id)
+    prompts = load_custom_prompts()
+    user_settings = prompts.get(user_id_str, {})
+    if isinstance(user_settings, dict):
+        return user_settings.get("model")
+    return None
+
+def fetch_lmstudio_models():
+    headers = {"Authorization": f"Bearer {os.getenv('LM_API_TOKEN')}"}
+    response = requests.get(LM_STUDIO_MODELS_URL, headers=headers, timeout=10)
+    response.raise_for_status()
+
+    payload = response.json()
+    raw_models = payload.get("data", [])
+    model_ids = [item.get("id") for item in raw_models if isinstance(item, dict) and item.get("id")]
+    return sorted(set(model_ids))
+
 def get_current_time():
     utc12_offset = timezone(timedelta(hours=12))
     utc12_time = datetime.now(timezone.utc).astimezone(utc12_offset)
@@ -322,16 +350,13 @@ def ask_lmstudio(user_id, message_content, prompt=None, stream=True):
     
     # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
     # Определяем, есть ли в сообщении изображение
-    has_image = any(item.get('type') == 'image_url' for item in message_content.get('content', []))
-    
-    # Выбираем модель в зависимости от наличия изображения
+    default_model = os.getenv("AI_MODEL")
+    user_model = get_user_model(user_id)
+
     if os.getenv("DEV_FAST") is not None:
         model_name = "google/gemma-3-4b"
     else:
-        if has_image:
-            model_name = os.getenv("AI_MODEL")
-        else:
-            model_name = os.getenv("AI_MODEL")
+        model_name = user_model or default_model
             
     print(f"{Fore.YELLOW}LM Studio: Используется модель: {model_name}{Style.RESET_ALL}")
 
@@ -462,6 +487,54 @@ def handle_reset(message):
         bot.reply_to(message, "Кастомный промпт сброшен.")
     else:
         bot.reply_to(message, "У вас нет кастомного промпта.")
+
+@bot.message_handler(commands=['switch'])
+def handle_switch_model(message):
+    user_id = str(message.from_user.id)
+    parts = message.text.split(maxsplit=1)
+    requested_model = parts[1].strip() if len(parts) > 1 else ""
+
+    prompts = load_custom_prompts()
+    user_settings = ensure_user_prompt_dict(prompts, user_id)
+    default_model = os.getenv("AI_MODEL")
+    active_user_model = user_settings.get("model") or default_model
+
+    if not requested_model:
+        try:
+            available_models = fetch_lmstudio_models()
+            models_text = "\n".join(f"- {model_id}" for model_id in available_models)
+            bot.reply_to(
+                message,
+                f"Current model: {active_user_model}\n\nAvailable models:\n{models_text}\n\nUsage: /switch <model_id>\nTo use default model: /switch default"
+            )
+        except Exception as e:
+            bot.reply_to(
+                message,
+                f"Current model: {active_user_model}\n\nFailed to fetch model list from LM Studio: {e}\nUsage: /switch <model_id>"
+            )
+        return
+
+    if requested_model.lower() == "default":
+        user_settings.pop("model", None)
+        save_custom_prompts(prompts)
+        bot.reply_to(message, f"Switched to default model: {default_model}")
+        return
+
+    try:
+        available_models = fetch_lmstudio_models()
+        if requested_model not in available_models:
+            bot.reply_to(
+                message,
+                "This model is not available in LM Studio. Send /switch without args to see available models."
+            )
+            return
+    except Exception:
+        # If model list cannot be fetched, still allow manual switch.
+        pass
+
+    user_settings["model"] = requested_model
+    save_custom_prompts(prompts)
+    bot.reply_to(message, f"Model switched to: {requested_model}")
 
 def calc_cal(message):
     data = message.text.split(" ")
@@ -888,6 +961,7 @@ def handle_all_messages(message):
 commands = [
     telebot.types.BotCommand("customize", "Позволяет задать кастомный промпт"),
     telebot.types.BotCommand("reset", "Сброс кастомизации"),
+    telebot.types.BotCommand("switch", "Switch LM Studio model"),
     telebot.types.BotCommand("food", "посчитать КБЖУ еды по фото"),
     telebot.types.BotCommand("food_edit", "изменить суточную цель калорий")
 ]
@@ -927,3 +1001,4 @@ def run_polling():
 
 # Start polling with retry logic
 run_polling()
+
